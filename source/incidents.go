@@ -158,6 +158,8 @@ type Incident struct {
 	PeakMs         *float64       `json:"peak_ms"`
 	PeakTarget     string         `json:"peak_target"`
 	MonitorStallMs *float64       `json:"monitor_stall_ms"` // PingWatch itself paused during this incident
+	Key            int64          `json:"key"`              // stable id (start, whole seconds) for event logs
+	Logs           *LogSummary    `json:"logs,omitempty"`
 	lastStart      float64
 }
 
@@ -259,6 +261,7 @@ func buildIncidents(start, end float64) []Incident {
 			}
 		}
 		inc.Monitored = len(inc.Hosts) + len(inc.Clean)
+		inc.Key = int64(inc.StartTS)
 		for _, s := range allStalls {
 			if s.TS >= inc.StartTS-5 && s.TS <= inc.EndTS+5 && (inc.MonitorStallMs == nil || s.Ms > *inc.MonitorStallMs) {
 				inc.MonitorStallMs = fptr(s.Ms)
@@ -392,6 +395,8 @@ func incidentRoutes(mux *http.ServeMux) {
 		list := []Incident{}
 		for _, inc := range all {
 			if len(inc.Hosts) >= minHosts && len(list) < 500 {
+				s := logSummary(inc)
+				inc.Logs = &s
 				list = append(list, inc)
 			}
 		}

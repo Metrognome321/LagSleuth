@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -97,5 +98,30 @@ func TestIncidentPatternInsufficient(t *testing.T) {
 	f := incidentPattern(buildIncidents(start, start+2*3600), start, start+2*3600)
 	if f.Status != "insufficient" {
 		t.Fatalf("want insufficient with 2 hours, got %s", f.Status)
+	}
+}
+
+func TestParseEvents(t *testing.T) {
+	out := []byte("<Events>\r\n<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='VSS'/><EventID Qualifiers='0'>8224</EventID><Level>4</Level><TimeCreated SystemTime='2026-11-18T12:00:01.5000000Z'/><Channel>Application</Channel><Computer>BED01</Computer></System><EventData><Data>x</Data></EventData><RenderingInfo Culture='en-GB'><Message>The VSS service is shutting down.</Message></RenderingInfo></Event>\r\n" +
+		"<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='disk'/><EventID>153</EventID><Level>3</Level><TimeCreated SystemTime='2026-11-18T12:00:02Z'/><Channel>System</Channel><Computer>BED01</Computer></System><EventData><Data>a</Data><Data>b</Data></EventData></Event>\r\n</Events>")
+	evs, err := parseEvents(out)
+	if err != nil || len(evs) != 2 {
+		t.Fatalf("parse: %v, %d events", err, len(evs))
+	}
+	e := evs[0]
+	if e.Provider != "VSS" || e.ID != 8224 || e.Level != 4 || e.Channel != "Application" || e.Message != "The VSS service is shutting down." {
+		t.Errorf("event 0 wrong: %+v", e)
+	}
+	if want := float64(time.Date(2026, 11, 18, 12, 0, 1, 5e8, time.UTC).UnixNano()) / 1e9; e.TS != want {
+		t.Errorf("ts %v want %v", e.TS, want)
+	}
+	if evs[1].Message != "a · b" {
+		t.Errorf("fallback message wrong: %q", evs[1].Message)
+	}
+	if q := logQuery(logChannels[0], 0, 1); !strings.Contains(q, "@SystemTime>='1970-01-01T00:00:00.000Z'") {
+		t.Errorf("query: %s", q)
+	}
+	if logEligible("8.8.8.8") || !logEligible("172.17.220.98") || !logEligible("fileserver01") {
+		t.Error("logEligible wrong")
 	}
 }

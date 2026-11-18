@@ -1,4 +1,4 @@
-PingWatch 1.3 - multi-host ping monitor
+PingWatch 1.4 - multi-host ping monitor
 =======================================
 
 Runs on any Windows 10 / 11 or Windows Server 2016+ machine.
@@ -84,6 +84,26 @@ INCIDENTS ACROSS HOSTS
   - "2+ hosts" hides single-host blips. Click a row to see all targets on the
     graph at that moment. Export CSV is ready to attach to a ticket.
 
+EVENT LOGS AROUND INCIDENTS
+  30 seconds after an incident ends, PingWatch reads the Windows event logs
+  from this PC and from every affected host, from 2 minutes before the
+  incident to 1 minute after. Click "Event logs" on the incident row to see
+  them, grouped by host, with the time relative to the incident start.
+  - Collected: Critical, Error and Warning events from System and Application,
+    plus events that often explain a stall: clock changes, shadow copies /
+    backups (VSS, volsnap, VMware Tools), scheduled tasks starting, Windows
+    Update, Storport and Time-Service.
+  - Short single-host blips are not collected automatically; use "Collect".
+  - Public addresses (e.g. 8.8.8.8) are skipped.
+  - Reading a remote server's logs uses the Windows account PingWatch runs as.
+    On each server, that account must be in the "Event Log Readers" group (or
+    be an admin) and the "Remote Event Log Management" firewall rule must be
+    enabled. Servers without access show "no access" and are retried after
+    30 minutes or when you click "Collect again".
+  - Some logs (e.g. Storport) can only be read by an admin; they are listed as
+    "not readable" and the rest are still collected.
+  - Set "event_logs": false in config.json to turn this off.
+
 MONITOR SELF-CHECK
   The badge in the header checks that PingWatch itself kept running on time.
   If the PingWatch machine is paused for more than 250 ms (busy, frozen VM,
@@ -114,6 +134,7 @@ config.json SETTINGS (edit, then restart PingWatch)
   retention_days           30
   range_buckets_ms         bucket edges for the "Ranges" pie view
   incident_window_s        10     slow spells starting this close together form one incident
+  event_logs               true   collect Windows event logs around incidents
   host / port              0.0.0.0 / 5055
   open_browser             true
 

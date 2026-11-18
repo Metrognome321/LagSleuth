@@ -29,7 +29,7 @@ import (
 //go:embed web
 var webFS embed.FS
 
-var version = "1.3.1"
+var version = "1.4.0"
 
 // ---------------------------------------------------------------------------- config
 
@@ -46,6 +46,7 @@ type Config struct {
 	RetentionDays       int      `json:"retention_days"`
 	RangeBucketsMs      []int    `json:"range_buckets_ms"`
 	IncidentWindowS     float64  `json:"incident_window_s"`
+	EventLogs           bool     `json:"event_logs"`
 	Host                string   `json:"host"`
 	Port                int      `json:"port"`
 	OpenBrowser         bool     `json:"open_browser"`
@@ -57,8 +58,8 @@ func defaultConfig() Config {
 		BaselineWindow: 300, BaselineMinSamples: 20, DeviationFactor: 3, DeviationMinDeltaMs: 10,
 		HighMs: 0, EventCloseAfter: 5, RetentionDays: 30,
 		RangeBucketsMs:  []int{1, 2, 5, 10, 20, 50, 100, 250, 500},
-		IncidentWindowS: 10,
-		Host:            "0.0.0.0", Port: 5055, OpenBrowser: true,
+		IncidentWindowS: 10, EventLogs: true,
+		Host: "0.0.0.0", Port: 5055, OpenBrowser: true,
 	}
 }
 
@@ -1226,6 +1227,7 @@ func routes() *http.ServeMux {
 
 	mux.HandleFunc("GET /api/targets", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, targetList()) })
 	incidentRoutes(mux)
+	eventLogRoutes(mux)
 
 	mux.HandleFunc("POST /api/targets", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -1433,6 +1435,7 @@ func main() {
 	}
 	loadEvents()
 	loadStalls()
+	loadLogs()
 
 	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
 	ln, err := net.Listen("tcp", addr)
@@ -1448,6 +1451,7 @@ func main() {
 	go eventSaver()
 	go housekeeping()
 	go stallWatch()
+	go logCollector()
 
 	url := fmt.Sprintf("http://localhost:%d", cfg.Port)
 	mode := "live"

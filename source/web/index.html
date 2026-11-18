@@ -113,6 +113,23 @@
   .chip.removed { color: var(--muted); text-decoration: line-through; }
   .tag { font-size: 11px; color: var(--muted); margin-left: 6px; }
   .incs { max-height: 420px; overflow: auto; }
+  .logbtn { background: none; border: 1px solid var(--axis); border-radius: 6px; color: var(--text-2); font: inherit; font-size: 12px; padding: 2px 8px; cursor: pointer; white-space: nowrap; }
+  .logbtn:hover { background: var(--surface-2); color: var(--text); }
+  .logbtn.open { border-color: var(--series); color: var(--text); }
+  .lpanel { margin-top: 12px; background: #121211; border: 1px solid var(--grid); border-radius: 8px; padding: 10px 14px 14px; }
+  .lhead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+  .lhost { margin: 8px 0 4px; font-family: var(--mono); font-size: 12.5px; color: var(--text); display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .lhost .st { font-family: "Segoe UI", system-ui, sans-serif; color: var(--muted); font-size: 12px; }
+  .lhost .st.bad { color: var(--warning); }
+  table.levs { width: 100%; font-size: 12.5px; }
+  table.levs td { border-bottom: 1px solid #1f1f1d; padding: 3px 6px; vertical-align: top; }
+  table.levs td.m { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 0; width: 60%; cursor: pointer; color: var(--text-2); }
+  table.levs td.m.full { white-space: pre-wrap; }
+  table.levs tr.out td { opacity: .5; }
+  table.levs .lv1, table.levs .lv2 { color: var(--critical); }
+  table.levs .lv3 { color: var(--warning); }
+  table.levs .lv4, table.levs .lv0 { color: var(--muted); }
+  .ltools { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 12px; flex-wrap: wrap; }
   .glegend { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 6px; margin-top: 8px; }
   .glegend .li { display: inline-flex; align-items: center; gap: 6px; background: none; border: 1px solid transparent; border-radius: 6px; padding: 3px 8px; color: var(--text-2); font: 12px var(--mono); cursor: pointer; }
   .glegend .li:hover { border-color: var(--axis); color: var(--text); background: var(--surface-2); }
@@ -222,6 +239,7 @@
     </h2>
     <div class="finding" id="incFinding"><span class="ic">…</span><span>Loading…</span></div>
     <div class="incs"><table id="incTable"></table></div>
+    <div id="incLogs"></div>
   </section>
 
   <section class="panel full">
@@ -838,8 +856,8 @@ async function refreshIncidents() {
   const chip = (t, cls, extra = '') => `<span class="chip ${cls}${live.has(t) ? '' : ' removed'}" title="${live.has(t) ? '' : 'no longer monitored'}">${esc(t)}${extra}</span>`;
   document.getElementById('incTable').innerHTML = list.length
     ? `<tr><th>Started</th><th class="n">Duration</th><th class="n">Hosts</th><th>Affected (worst first)</th><th>Stayed normal</th>
-         <th class="n">Peak ms</th><th class="n">Timeouts</th><th class="n">Onset spread</th><th>Monitor</th></tr>` +
-      list.map(i => `<tr class="jump ${i.ongoing ? 'ongoing' : ''}" title="Show all targets on the graph at this time" data-s="${i.start_ts}" data-e="${i.end_ts}">
+         <th class="n">Peak ms</th><th class="n">Timeouts</th><th class="n">Onset spread</th><th>Monitor</th><th>Event logs</th></tr>` +
+      list.map(i => `<tr class="jump ${i.ongoing ? 'ongoing' : ''}" title="Show all targets on the graph at this time" data-s="${i.start_ts}" data-e="${i.end_ts}" data-k="${i.key}">
         <td>${dstr(i.start_ts)}${i.ongoing ? ' <span class="pill bad">▲ Ongoing</span>' : ''}</td>
         <td class="n">${dur(i.duration_s)}</td>
         <td class="n">${i.hosts.length} of ${i.monitored}</td>
@@ -847,15 +865,119 @@ async function refreshIncidents() {
         <td class="wrap"><div class="hosts">${i.clean.map(t => chip(t, 'clean')).join('') || '<span class="tag">none</span>'}</div></td>
         <td class="n">${fmt(i.peak_ms)}</td><td class="n">${i.timeouts}</td>
         <td class="n">${i.hosts.length > 1 ? dur(i.onset_spread_s) : '–'}</td>
-        <td>${i.monitor_stall_ms != null ? `<span class="pill bad" title="PingWatch itself was paused for ${fmt(i.monitor_stall_ms)} ms during this incident, so these results may not be real">⚠ paused ${fmt(i.monitor_stall_ms)} ms</span>` : '<span class="tag">OK</span>'}</td></tr>`).join('')
+        <td>${i.monitor_stall_ms != null ? `<span class="pill bad" title="PingWatch itself was paused for ${fmt(i.monitor_stall_ms)} ms during this incident, so these results may not be real">⚠ paused ${fmt(i.monitor_stall_ms)} ms</span>` : '<span class="tag">OK</span>'}</td>
+        <td>${logCell(i)}</td></tr>`).join('')
     : `<tr><td class="empty">No ${inc.minHosts > 1 ? 'multi-host ' : ''}incidents in this window. 👍</td></tr>`;
+  inc.list = list;
+  const cur = list.find(i => i.key === inc.openKey);
+  if (cur) inc.openInc = cur;
+  renderLogPanel();
+}
+
+// the open incident's event logs, full width under the incidents table (one incident at a time)
+function renderLogPanel() {
+  const el = document.getElementById('incLogs');
+  const i = inc.openKey != null ? inc.openInc : null;
+  const html = i ? `<div class="lpanel"><div class="lhead"><b>Event logs</b> · incident at ${dstr(i.start_ts)} · ${i.hosts.length} host${i.hosts.length === 1 ? '' : 's'} affected
+      <span style="flex:1"></span><button class="logbtn" data-close="1">✕ Close</button></div>${logDetail(i)}</div>` : '';
+  if (el._html !== html) { el.innerHTML = html; el._html = html; }   // untouched when unchanged, so text stays selectable
+}
+
+/* ---------------- event logs per incident ---------------- */
+inc.openKey = null;     // incident whose logs are shown
+inc.openInc = null;
+inc.logs = {};          // key -> collected logs (fetched once)
+inc.full = new Set();   // "key|host|index" of messages shown in full
+function logCell(i) {
+  const s = i.logs || {};
+  const open = inc.openKey === i.key ? ' open' : '';
+  switch (s.status) {
+    case 'collected': return `<button class="logbtn${open}" data-log="${i.key}" title="Windows events from this PC and the affected hosts, ${LOG_BEFORE / 60} min before to ${LOG_AFTER / 60} min after">📄 ${s.events} event${s.events === 1 ? '' : 's'}` +
+      `${s.warnings ? ` · <span style="color:var(--warning)">⚠ ${s.warnings}</span>` : ''}${s.no_access ? ` · <span style="color:var(--muted)">${s.no_access} no access</span>` : ''}</button>`;
+    case 'collecting': return '<span class="tag">collecting…</span>';
+    case 'pending': return `<span class="tag" title="Collected automatically ${LOG_SETTLE} s after the incident ends">after it ends</span>`;
+    case 'not_needed': return `<button class="logbtn" data-collect="${i.key}" title="Short single-host blips are not collected automatically">Collect</button>`;
+    case 'off': return '<span class="tag" title="event_logs is false in config.json">off</span>';
+  }
+  return '';
+}
+const LOG_BEFORE = 120, LOG_AFTER = 60, LOG_SETTLE = 30;
+const LVL = { 1: ['✖', 'Critical'], 2: ['✖', 'Error'], 3: ['⚠', 'Warning'], 4: ['ℹ', 'Information'], 0: ['ℹ', 'Information'] };
+const shortCh = c => c.replace(/^Microsoft-Windows-/, '').replace(/\/Operational$/, '');
+const offs = s => (s < 0 ? '−' : '+') + (Math.abs(s) < 60 ? `${Math.abs(s).toFixed(Math.abs(s) < 10 ? 1 : 0)}s` : `${Math.floor(Math.abs(s) / 60)}m${String(Math.round(Math.abs(s) % 60)).padStart(2, '0')}s`);
+function logDetail(i) {
+  const L = inc.logs[i.key];
+  if (!L) return '<span class="tag">Loading event logs…</span>';
+  if (L.error) return `<span class="tag">${esc(L.error)}</span>`;
+  let html = `<div class="ltools">Events from ${dstr(L.from)} to ${tstr(L.to)} (2 min before to 1 min after the incident) · collected ${dstr(L.collected)} · faded rows are outside the incident
+    <span style="flex:1"></span><button class="logbtn" data-collect="${i.key}" data-retry="1">↻ Collect again</button></div>`;
+  for (const h of L.hosts) {
+    const st = h.status === 'ok' ? `<span class="st">${h.events.length} event${h.events.length === 1 ? '' : 's'}${h.capped ? ' (first 300)' : ''}</span>`
+      : `<span class="st bad">${h.status === 'skipped' ? 'skipped' : h.status === 'no_access' ? 'no access' : 'error'}: ${esc(h.error || '')}</span>`;
+    const skipped = h.skipped && h.skipped.length ? `<span class="st" title="${esc(h.skipped.join('\n'))}">· ${h.skipped.length} log${h.skipped.length === 1 ? '' : 's'} not readable</span>` : '';
+    const comp = h.events.length && h.events[0].computer ? ` <span class="st">(${esc(h.events[0].computer)})</span>` : '';
+    html += `<div class="lhost">${esc(h.label)}${comp} ${st} ${skipped}</div>`;
+    if (h.status === 'no_access' && h.host) html += `<div class="tag" style="margin:0 0 6px">To allow this: add the account PingWatch runs as to "Event Log Readers" on ${esc(h.host)} and enable the "Remote Event Log Management" firewall rule there.</div>`;
+    if (!h.events.length) continue;
+    html += '<table class="levs">' + h.events.map((e, n) => {
+      const inside = e.ts >= i.start_ts - 2 && e.ts <= i.end_ts + 2;
+      const id = `${i.key}|${h.host}|${n}`;
+      const [ic, word] = LVL[e.level] || LVL[0];
+      return `<tr class="${inside ? '' : 'out'}"><td style="white-space:nowrap">${new Date(e.ts * 1000).toLocaleTimeString()}</td>
+        <td class="n" style="white-space:nowrap" title="relative to the incident start">${offs(e.ts - i.start_ts)}</td>
+        <td class="lv${e.level}" title="${word}">${ic}</td>
+        <td style="white-space:nowrap">${esc(shortCh(e.channel))}</td>
+        <td style="white-space:nowrap">${esc(e.provider)} <span class="tag" style="margin:0">${e.id}</span></td>
+        <td class="m${inc.full.has(id) ? ' full' : ''}" data-full="${esc(id)}" title="Click to show the whole message">${esc(e.message)}</td></tr>`;
+    }).join('') + '</table>';
+  }
+  return html;
+}
+async function loadLogs(key) {
+  const r = await fetch(`/api/eventlogs?key=${key}`);
+  inc.logs[key] = r.ok ? await r.json() : { error: 'No event logs collected for this incident yet.' };
+  refreshIncidents();
 }
 document.getElementById('incScope').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   document.querySelectorAll('#incScope button').forEach(x => x.classList.toggle('on', x === b));
   inc.minHosts = +b.dataset.v; refreshIncidents();
 });
-document.getElementById('incTable').addEventListener('click', e => {
+const openLogs = k => {
+  if (inc.openKey === k) { inc.openKey = null; return; }
+  inc.openKey = k; inc.openInc = (inc.list || []).find(i => i.key === k) || inc.openInc;
+  if (!inc.logs[k] || inc.logs[k].error) loadLogs(k);
+};
+async function onLogClick(e) {
+  if (e.target.closest('[data-close]')) { inc.openKey = null; return refreshIncidents(); }
+  const lb = e.target.closest('[data-log]');
+  if (lb) {
+    openLogs(+lb.dataset.log);
+    refreshIncidents();
+    if (inc.openKey != null) setTimeout(() => document.getElementById('incLogs').scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+    return true;
+  }
+  const cb = e.target.closest('[data-collect]');
+  if (cb) {
+    const k = +cb.dataset.collect;
+    cb.disabled = true; cb.textContent = 'collecting…';
+    await fetch(`/api/eventlogs/collect?key=${k}${cb.dataset.retry ? '&retry=1' : ''}`, { method: 'POST' });
+    delete inc.logs[k]; inc.openKey = k; inc.openInc = (inc.list || []).find(i => i.key === k) || inc.openInc;
+    const poll = setInterval(async () => {          // wait for the collection to finish, then show it
+      const r = await fetch(`/api/eventlogs?key=${k}`);
+      if (r.ok) { const L = await r.json(); if (!inc.logs[k] || L.collected !== inc.logs[k].collected) { inc.logs[k] = L; clearInterval(poll); refreshIncidents(); } }
+    }, 2000);
+    setTimeout(() => clearInterval(poll), 120000);
+    refreshIncidents();
+    return true;
+  }
+  const mf = e.target.closest('[data-full]');
+  if (mf) { inc.full.has(mf.dataset.full) ? inc.full.delete(mf.dataset.full) : inc.full.add(mf.dataset.full); renderLogPanel(); return true; }
+  return false;
+}
+document.getElementById('incLogs').addEventListener('click', onLogClick);
+document.getElementById('incTable').addEventListener('click', async e => {
+  if (e.target.closest('[data-log],[data-collect]')) return onLogClick(e);
   const tr = e.target.closest('tr.jump'); if (!tr) return;
   const s0 = +tr.dataset.s, e0 = +tr.dataset.e;
   const pad = Math.max(60, (e0 - s0) * 0.75);

@@ -29,7 +29,7 @@ import (
 //go:embed web
 var webFS embed.FS
 
-var version = "1.2.0"
+var version = "1.3.0"
 
 // ---------------------------------------------------------------------------- config
 
@@ -45,6 +45,7 @@ type Config struct {
 	EventCloseAfter     int      `json:"event_close_after"`
 	RetentionDays       int      `json:"retention_days"`
 	RangeBucketsMs      []int    `json:"range_buckets_ms"`
+	IncidentWindowS     float64  `json:"incident_window_s"`
 	Host                string   `json:"host"`
 	Port                int      `json:"port"`
 	OpenBrowser         bool     `json:"open_browser"`
@@ -55,8 +56,9 @@ func defaultConfig() Config {
 		Targets: []string{"8.8.8.8", "1.1.1.1"}, IntervalSeconds: 1, TimeoutMs: 1000,
 		BaselineWindow: 300, BaselineMinSamples: 20, DeviationFactor: 3, DeviationMinDeltaMs: 10,
 		HighMs: 0, EventCloseAfter: 5, RetentionDays: 30,
-		RangeBucketsMs: []int{1, 2, 5, 10, 20, 50, 100, 250, 500},
-		Host:           "0.0.0.0", Port: 5055, OpenBrowser: true,
+		RangeBucketsMs:  []int{1, 2, 5, 10, 20, 50, 100, 250, 500},
+		IncidentWindowS: 10,
+		Host:            "0.0.0.0", Port: 5055, OpenBrowser: true,
 	}
 }
 
@@ -376,7 +378,8 @@ func (m *Monitor) run() {
 		} else {
 			rtt = pinger.Ping(m.target, cfg.TimeoutMs)
 		}
-		m.record(float64(time.Now().UnixNano())/1e9, rtt)
+		// timestamp = when the ping was sent, so a slow reply is filed at the moment the stall began
+		m.record(float64(started.UnixNano())/1e9, rtt)
 		wait := interval - time.Since(started)
 		if wait < 0 {
 			wait = 0
@@ -539,6 +542,11 @@ func simulated(t string) float64 {
 			base  float64
 		}{0, []float64{3, 8, 20}[rand.Intn(3)]}
 		simState[t] = st
+	}
+	// shared stall: every 3 minutes the 3 ms and 8 ms hosts stall together for ~15 s, as if they share
+	// one virtualisation host; 20 ms hosts play "off-host" targets and stay clean
+	if time.Now().Unix()%180 < 15 && st.base < 20 && rand.Float64() < 0.7 {
+		return st.base*20 + rand.Float64()*300
 	}
 	if st.spike > 0 {
 		st.spike--
@@ -716,6 +724,7 @@ func distribution(h *hist, mode string) map[string]any {
 type EventOut struct {
 	ID          int64    `json:"id"`
 	Target      string   `json:"target"`
+	Active      bool     `json:"active"` // false once the target has been removed from monitoring
 	StartTS     float64  `json:"start_ts"`
 	EndTS       *float64 `json:"end_ts"`
 	Ongoing     bool     `json:"ongoing"`
@@ -729,6 +738,10 @@ type EventOut struct {
 }
 
 func eventsIn(target string, start, end float64, limit int) []EventOut {
+	active := map[string]bool{}
+	for _, t := range targetList() {
+		active[t] = true
+	}
 	eventsMu.Lock()
 	defer eventsMu.Unlock()
 	out := []EventOut{}
@@ -748,7 +761,7 @@ func eventsIn(target string, start, end float64, limit int) []EventOut {
 		if okn := e.DevSamples - e.Timeouts; okn > 0 {
 			avg = fptr(e.SumMs / float64(okn))
 		}
-		out = append(out, EventOut{e.ID, e.Target, e.StartTS, e.EndTS, e.EndTS == nil, stop - e.StartTS,
+		out = append(out, EventOut{e.ID, e.Target, active[e.Target], e.StartTS, e.EndTS, e.EndTS == nil, stop - e.StartTS,
 			e.DevSamples, e.Timeouts, e.PeakMs, avg, e.BaselineMs, e.ThresholdMs})
 	}
 	return out
@@ -1212,6 +1225,7 @@ func routes() *http.ServeMux {
 	mux.Handle("GET /static/", http.FileServer(http.FS(sub)))
 
 	mux.HandleFunc("GET /api/targets", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, targetList()) })
+	incidentRoutes(mux)
 
 	mux.HandleFunc("POST /api/targets", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -1343,8 +1357,17 @@ func routes() *http.ServeMux {
 		cfgMu.Lock()
 		c := cfg
 		cfgMu.Unlock()
+		incs := buildIncidents(start, end)
+		multi := []Incident{}
+		for _, inc := range incs {
+			if len(inc.Hosts) >= 2 && len(multi) < 300 {
+				multi = append(multi, inc)
+			}
+		}
 		writeJSON(w, map[string]any{"start": start, "end": end, "generated": float64(time.Now().Unix()),
-			"mode": mode, "cfg": c, "sections": sections})
+			"mode": mode, "cfg": c, "sections": sections, "version": version,
+			"incidents": map[string]any{"multi_host": multi, "total": len(incs), "finding": incidentPattern(incs, start, end)},
+			"health":    healthAPI(start, end)})
 	})
 
 	mux.HandleFunc("GET /api/export/events.csv", func(w http.ResponseWriter, r *http.Request) {
@@ -1409,6 +1432,7 @@ func main() {
 		cfg.Port = *portFlag
 	}
 	loadEvents()
+	loadStalls()
 
 	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
 	ln, err := net.Listen("tcp", addr)
@@ -1423,6 +1447,7 @@ func main() {
 	}
 	go eventSaver()
 	go housekeeping()
+	go stallWatch()
 
 	url := fmt.Sprintf("http://localhost:%d", cfg.Port)
 	mode := "live"

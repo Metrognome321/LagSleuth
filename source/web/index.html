@@ -103,6 +103,17 @@
   #heatmap { cursor: pointer; }
   .distgrid { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 20px; align-items: start; }
   .distgrid .legend { margin-top: 0; }
+  .health { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--axis); color: var(--muted); cursor: help; }
+  .health.ok { color: var(--good); border-color: var(--good); }
+  .health.warn { color: var(--warning); border-color: var(--warning); }
+  .hosts { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { font-family: var(--mono); font-size: 12px; padding: 1px 7px; border-radius: 5px; background: var(--surface-2); white-space: nowrap; }
+  .chip.hit { color: var(--serious); }
+  .chip.clean { color: var(--good); }
+  .chip.removed { color: var(--muted); text-decoration: line-through; }
+  .tag { font-size: 11px; color: var(--muted); margin-left: 6px; }
+  .incs { max-height: 420px; overflow: auto; }
+  td.wrap { white-space: normal; min-width: 220px; }
   @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -115,6 +126,7 @@
   </form>
   <div class="spacer"></div>
   <div class="controls">
+    <span class="health" id="health" title="Checks that PingWatch itself kept running on time">◌ Monitor</span>
     <span style="color:var(--muted)">Stats window</span>
     <div class="seg" id="range">
       <button data-m="15">15m</button><button data-m="60" class="on">1h</button><button data-m="360">6h</button>
@@ -192,6 +204,17 @@
         <div class="hm-legend" id="hmLegend"></div>
       </div>
     </div>
+  </section>
+
+  <section class="panel full">
+    <h2>Incidents across hosts
+      <span class="sub" id="incSub"></span>
+      <span style="flex:1"></span>
+      <span class="seg" id="incScope"><button data-v="2" class="on">2+ hosts</button><button data-v="1">All</button></span>
+      <a class="btn" id="csvIncidents" style="text-transform:none;letter-spacing:0;font-weight:400">Export CSV</a>
+    </h2>
+    <div class="finding" id="incFinding"><span class="ic">…</span><span>Loading…</span></div>
+    <div class="incs"><table id="incTable"></table></div>
   </section>
 
   <section class="panel full">
@@ -687,6 +710,8 @@ async function refreshStats() {
   renderSummary(st.summary);
   renderPie(st.distribution);
   renderEvents(evs);
+  refreshIncidents();
+  refreshHealth();
   document.getElementById('reportBtn').href = `/report?minutes=${Math.max(state.minutes, 1440)}`;
   document.getElementById('csvEvents').href = `/api/export/events.csv?${q()}` + (state.devScope === 'one' ? `&target=${t}` : '');
   document.getElementById('csvSamples').href = `/api/export/samples.csv?${q()}&target=${t}`;
@@ -731,13 +756,70 @@ function renderEvents(evs) {
     ? `<tr>${all ? '<th>Target</th>' : ''}<th>Started</th><th>Ended</th><th class="n">Duration</th><th class="n">Deviating pings</th>
          <th class="n">Timeouts</th><th class="n">Peak ms</th><th class="n">Avg ms</th><th class="n">Normal ms</th><th class="n">Threshold ms</th></tr>` +
       evs.map(e => `<tr class="jump ${e.ongoing ? 'ongoing' : ''}" title="Show this on the graph" data-s="${e.start_ts}" data-e="${e.end_ts || e.start_ts + e.duration_s}" data-t="${esc(e.target)}">
-        ${all ? `<td style="font-family:var(--mono)">${esc(e.target)}</td>` : ''}
+        ${all ? `<td style="font-family:var(--mono)">${esc(e.target)}${e.active ? '' : '<span class="tag">removed</span>'}</td>` : ''}
         <td>${dstr(e.start_ts)}</td>
         <td>${e.ongoing ? '<span class="pill bad">▲ Ongoing</span>' : tstr(e.end_ts)}</td>
         <td class="n">${dur(e.duration_s)}</td><td class="n">${e.dev_samples}</td><td class="n">${e.timeouts}</td>
         <td class="n">${fmt(e.peak_ms)}</td><td class="n">${fmt(e.avg_ms)}</td>
         <td class="n">${fmt(e.baseline_ms)}</td><td class="n">${fmt(e.threshold_ms)}</td></tr>`).join('')
     : '<tr><td class="empty">No deviations in this window. 👍</td></tr>';
+}
+
+/* ---------------- incidents across hosts ---------------- */
+const inc = { minHosts: 2 };
+async function refreshIncidents() {
+  const d = await getJSON(`/api/incidents?${q()}&min_hosts=${inc.minHosts}`);
+  const f = d.finding;
+  const el = document.getElementById('incFinding');
+  el.className = 'finding ' + f.status;
+  el.innerHTML = `<span class="ic" style="color:${f.status === 'pattern' ? C.serious : f.status === 'none' ? css('--good') : C.muted}">${{ pattern: '▲', none: '✔', insufficient: '◌' }[f.status]}</span><span>${esc(f.text)}</span>`;
+  const list = d.incidents;
+  document.getElementById('incSub').textContent = `${list.length} incident${list.length === 1 ? '' : 's'}${inc.minHosts > 1 ? ' hitting 2+ hosts' : ''} · last ${rangeLabel()} · grouped when they start within ${d.window_s}s`;
+  document.getElementById('csvIncidents').href = `/api/export/incidents.csv?${q()}&min_hosts=${inc.minHosts}`;
+  const live = new Set(Object.keys(view.liveData));
+  const chip = (t, cls, extra = '') => `<span class="chip ${cls}${live.has(t) ? '' : ' removed'}" title="${live.has(t) ? '' : 'no longer monitored'}">${esc(t)}${extra}</span>`;
+  document.getElementById('incTable').innerHTML = list.length
+    ? `<tr><th>Started</th><th class="n">Duration</th><th class="n">Hosts</th><th>Affected (worst first)</th><th>Stayed normal</th>
+         <th class="n">Peak ms</th><th class="n">Timeouts</th><th class="n">Onset spread</th><th>Monitor</th></tr>` +
+      list.map(i => `<tr class="jump ${i.ongoing ? 'ongoing' : ''}" title="Show all targets on the graph at this time" data-s="${i.start_ts}" data-e="${i.end_ts}">
+        <td>${dstr(i.start_ts)}${i.ongoing ? ' <span class="pill bad">▲ Ongoing</span>' : ''}</td>
+        <td class="n">${dur(i.duration_s)}</td>
+        <td class="n">${i.hosts.length} of ${i.monitored}</td>
+        <td class="wrap"><div class="hosts">${i.hosts.map(h => chip(h.target, 'hit', ` ${h.peak_ms != null ? fmt(h.peak_ms) + ' ms' : ''}${h.timeouts ? ` ✕${h.timeouts}` : ''}`)).join('')}</div></td>
+        <td class="wrap"><div class="hosts">${i.clean.map(t => chip(t, 'clean')).join('') || '<span class="tag">none</span>'}</div></td>
+        <td class="n">${fmt(i.peak_ms)}</td><td class="n">${i.timeouts}</td>
+        <td class="n">${i.hosts.length > 1 ? dur(i.onset_spread_s) : '–'}</td>
+        <td>${i.monitor_stall_ms != null ? `<span class="pill bad" title="PingWatch itself was paused for ${fmt(i.monitor_stall_ms)} ms during this incident, so these results may not be real">⚠ paused ${fmt(i.monitor_stall_ms)} ms</span>` : '<span class="tag">OK</span>'}</td></tr>`).join('')
+    : `<tr><td class="empty">No ${inc.minHosts > 1 ? 'multi-host ' : ''}incidents in this window. 👍</td></tr>`;
+}
+document.getElementById('incScope').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.querySelectorAll('#incScope button').forEach(x => x.classList.toggle('on', x === b));
+  inc.minHosts = +b.dataset.v; refreshIncidents();
+});
+document.getElementById('incTable').addEventListener('click', e => {
+  const tr = e.target.closest('tr.jump'); if (!tr) return;
+  const s0 = +tr.dataset.s, e0 = +tr.dataset.e;
+  const pad = Math.max(60, (e0 - s0) * 0.75);
+  state.liveScope = 'all';
+  document.querySelectorAll('#liveScope button').forEach(x => x.classList.toggle('on', x.dataset.v === 'all'));
+  jumpTo(s0 - pad, e0 + pad);
+});
+
+/* ---------------- monitor self-check ---------------- */
+async function refreshHealth() {
+  const h = await getJSON(`/api/health?${q()}`);
+  const el = document.getElementById('health');
+  if (h.stall_count === 0) {
+    el.className = 'health ok';
+    el.textContent = `● Monitor OK${h.simulated ? ' · SIMULATED' : ''}`;
+    el.title = `PingWatch ${h.version} kept to time for the whole stats window (no pause over ${h.stall_threshold_ms} ms). Running since ${dstr(h.started_ts)}.`;
+  } else {
+    el.className = 'health warn';
+    el.textContent = `⚠ Monitor paused ${h.stall_count}×`;
+    el.title = `PingWatch itself was paused ${h.stall_count} time(s) in this window, worst ${fmt(h.worst_ms)} ms, last at ${dstr(h.last_ts)}.\n` +
+      `Pings around those moments may look slow because of this machine, not the network.`;
+  }
 }
 
 /* ---------------- controls ---------------- */

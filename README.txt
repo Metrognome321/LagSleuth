@@ -1,4 +1,4 @@
-PingWatch 1.2 - multi-host ping monitor
+PingWatch 1.3 - multi-host ping monitor
 =======================================
 
 Runs on any Windows 10 / 11 or Windows Server 2016+ machine.
@@ -67,6 +67,27 @@ TIME PATTERN (e.g. "high ping every hour on the hour")
     a vertical stripe. Hover a cell for its details.
   The printable Report includes the finding and the by-minute chart for every host.
 
+INCIDENTS ACROSS HOSTS
+  When several hosts go slow at the same moment, the Incidents panel shows it
+  as one row: when it started, how long it lasted, which hosts were hit (worst
+  first, with peak ms) and which hosts stayed normal.
+  - Slow spells that start within incident_window_s (default 10 s) of each
+    other, or while an incident is still in progress, are grouped together.
+  - "Onset spread" is the time between the first and last host going slow:
+    near 0 s means they all stalled at once.
+  - A finding at the top spots incidents that recur at the same minute of the
+    hour, e.g. "Incidents hitting several hosts start at :00 past the hour:
+    seen in 5 of 5 hours". It needs 4+ hours of data.
+  - "2+ hosts" hides single-host blips. Click a row to see all targets on the
+    graph at that moment. Export CSV is ready to attach to a ticket.
+
+MONITOR SELF-CHECK
+  The badge in the header checks that PingWatch itself kept running on time.
+  If the PingWatch machine is paused for more than 250 ms (busy, frozen VM,
+  sleep), the badge turns amber ("Monitor paused 2x") and any incident at that
+  moment is marked "paused". Pings then may look slow because of the
+  monitoring machine rather than the network.
+
 UPGRADING
   Replace PingWatch.exe with the new one. config.json and the data folder are
   kept, so existing history and events carry over.
@@ -89,6 +110,7 @@ config.json SETTINGS (edit, then restart PingWatch)
   event_close_after        5
   retention_days           30
   range_buckets_ms         bucket edges for the "Ranges" pie view
+  incident_window_s        10     slow spells starting this close together form one incident
   host / port              0.0.0.0 / 5055
   open_browser             true
 

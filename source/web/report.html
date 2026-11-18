@@ -38,6 +38,7 @@
   </select>
   <select id="mode"><option value="ranges">Ranges</option><option value="exact">Exact ms</option></select>
   <a id="csv">Deviations CSV</a>
+  <a id="icsv">Incidents CSV</a>
   <a id="raw">Raw samples CSV</a>
 </div>
 <div id="sections"></div>
@@ -67,13 +68,26 @@ for (const id of ['period', 'mode']) {
 }
 document.getElementById('csv').href = '/api/export/events.csv?' + params;
 document.getElementById('raw').href = '/api/export/samples.csv?' + params;
+document.getElementById('icsv').href = '/api/export/incidents.csv?min_hosts=2&' + params;
 
 fetch('/api/report?' + params).then(r => r.json()).then(R => {
   const c = R.cfg;
   document.getElementById('meta').innerHTML =
     `Period: <b>${ts(R.start)}</b> to <b>${ts(R.end)}</b> · generated ${ts(R.generated)} · deviation rule: slower than ${c.deviation_factor}× normal and at least ${c.deviation_min_delta_ms} ms above it${c.high_ms ? `, or ≥ ${c.high_ms} ms` : ''}, or a timeout`;
   const root = document.getElementById('sections');
-  if (!R.sections.length) root.innerHTML = '<section><p class="none">No targets configured.</p></section>';
+  const H = R.health, I = R.incidents, IF = I.finding;
+  const icol = IF.status === 'pattern' ? '#ec835a' : IF.status === 'none' ? '#0ca30c' : '#898781';
+  let top = `<section><h2 style="font-family:inherit">Incidents across hosts</h2>
+    <div class="verdict" style="border-color:${H.stall_count ? '#fab219' : '#0ca30c'}">${H.stall_count
+      ? `⚠ PingWatch itself was paused ${H.stall_count} time(s) in this period (worst ${ms(H.worst_ms)} ms). Pings at those moments may be slow because of the monitoring machine.`
+      : '✔ Monitoring machine kept to time for the whole period, so slow pings below are not caused by PingWatch.'}</div>
+    <div class="verdict" style="border-color:${icol}">${{ pattern: '▲', none: '✔', insufficient: '◌' }[IF.status]} ${esc(IF.text)}</div>`;
+  top += I.multi_host.length ? `<table><tr><th>Started</th><th class="n">Duration</th><th class="n">Hosts</th><th>Affected (peak ms)</th><th>Stayed normal</th><th class="n">Timeouts</th></tr>` +
+    I.multi_host.map(i => `<tr><td>${ts(i.start_ts)}</td><td class="n">${dur(i.duration_s)}</td><td class="n">${i.hosts.length} of ${i.monitored}</td>
+      <td>${i.hosts.map(h => `${esc(h.target)} (${ms(h.peak_ms)})`).join(', ')}</td><td>${i.clean.map(esc).join(', ') || '–'}</td><td class="n">${i.timeouts}</td></tr>`).join('') + '</table>'
+    : '<p class="none">No incident affected more than one host at the same time.</p>';
+  root.insertAdjacentHTML('beforeend', top + '</section>');
+  if (!R.sections.length) root.insertAdjacentHTML('beforeend', '<section><p class="none">No targets configured.</p></section>');
   R.sections.forEach((sec, idx) => {
     const s = sec.summary, ev = sec.events, sl = sec.distribution.slices;
     const normal = sl.filter(x => !x.kind); normal.forEach((x, i) => { x._i = i; x._n = normal.length; });

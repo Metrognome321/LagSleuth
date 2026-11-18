@@ -18,6 +18,7 @@ host is unaffected.
 gofmt -l .            # must print nothing
 go vet .
 GOOS=windows go vet .
+go test ./...         # incident grouping and pattern tests (synthetic data)
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o dist/PingWatch-amd64.exe .
 ```
 Also build `386` and `arm64` for releases. Bump `var version` in main.go each release.

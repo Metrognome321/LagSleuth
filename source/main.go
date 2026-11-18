@@ -29,27 +29,30 @@ import (
 //go:embed web
 var webFS embed.FS
 
-var version = "1.4.0"
+var version = "1.5.0"
 
 // ---------------------------------------------------------------------------- config
 
 type Config struct {
-	Targets             []string `json:"targets"`
-	IntervalSeconds     float64  `json:"interval_seconds"`
-	TimeoutMs           int      `json:"timeout_ms"`
-	BaselineWindow      int      `json:"baseline_window"`
-	BaselineMinSamples  int      `json:"baseline_min_samples"`
-	DeviationFactor     float64  `json:"deviation_factor"`
-	DeviationMinDeltaMs float64  `json:"deviation_min_delta_ms"`
-	HighMs              float64  `json:"high_ms"`
-	EventCloseAfter     int      `json:"event_close_after"`
-	RetentionDays       int      `json:"retention_days"`
-	RangeBucketsMs      []int    `json:"range_buckets_ms"`
-	IncidentWindowS     float64  `json:"incident_window_s"`
-	EventLogs           bool     `json:"event_logs"`
-	Host                string   `json:"host"`
-	Port                int      `json:"port"`
-	OpenBrowser         bool     `json:"open_browser"`
+	Targets                []string `json:"targets"`
+	IntervalSeconds        float64  `json:"interval_seconds"`
+	TimeoutMs              int      `json:"timeout_ms"`
+	BaselineWindow         int      `json:"baseline_window"`
+	BaselineMinSamples     int      `json:"baseline_min_samples"`
+	DeviationFactor        float64  `json:"deviation_factor"`
+	DeviationMinDeltaMs    float64  `json:"deviation_min_delta_ms"`
+	HighMs                 float64  `json:"high_ms"`
+	EventCloseAfter        int      `json:"event_close_after"`
+	RetentionDays          int      `json:"retention_days"`
+	RangeBucketsMs         []int    `json:"range_buckets_ms"`
+	IncidentWindowS        float64  `json:"incident_window_s"`
+	EventLogs              bool     `json:"event_logs"`
+	Metrics                bool     `json:"metrics"`
+	MetricsIntervalSeconds float64  `json:"metrics_interval_seconds"`
+	MetricsRetentionDays   int      `json:"metrics_retention_days"`
+	Host                   string   `json:"host"`
+	Port                   int      `json:"port"`
+	OpenBrowser            bool     `json:"open_browser"`
 }
 
 func defaultConfig() Config {
@@ -59,6 +62,7 @@ func defaultConfig() Config {
 		HighMs: 0, EventCloseAfter: 5, RetentionDays: 30,
 		RangeBucketsMs:  []int{1, 2, 5, 10, 20, 50, 100, 250, 500},
 		IncidentWindowS: 10, EventLogs: true,
+		Metrics: true, MetricsIntervalSeconds: 1, MetricsRetentionDays: 7,
 		Host: "0.0.0.0", Port: 5055, OpenBrowser: true,
 	}
 }
@@ -1228,6 +1232,7 @@ func routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/targets", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, targetList()) })
 	incidentRoutes(mux)
 	eventLogRoutes(mux)
+	metricRoutes(mux)
 
 	mux.HandleFunc("POST /api/targets", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -1363,6 +1368,8 @@ func routes() *http.ServeMux {
 		multi := []Incident{}
 		for _, inc := range incs {
 			if len(inc.Hosts) >= 2 && len(multi) < 300 {
+				s := logSummary(inc)
+				inc.Logs = &s
 				multi = append(multi, inc)
 			}
 		}
@@ -1452,6 +1459,8 @@ func main() {
 	go housekeeping()
 	go stallWatch()
 	go logCollector()
+	go metricsManager()
+	go metricsHousekeeping()
 
 	url := fmt.Sprintf("http://localhost:%d", cfg.Port)
 	mode := "live"

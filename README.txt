@@ -1,4 +1,4 @@
-PingWatch 1.4 - multi-host ping monitor
+PingWatch 1.5 - multi-host ping monitor
 =======================================
 
 Runs on any Windows 10 / 11 or Windows Server 2016+ machine.
@@ -84,6 +84,38 @@ INCIDENTS ACROSS HOSTS
   - "2+ hosts" hides single-host blips. Click a row to see all targets on the
     graph at that moment. Export CSV is ready to attach to a ticket.
 
+SERVER METRICS (CPU, MEMORY, DISK)
+  PingWatch reads Windows performance counters every second from this PC and
+  from every monitored host with a private address, and shows them live:
+  - On each host card: CPU, disk latency and free memory right now.
+  - In the Server metrics panel: one collapsible graph per metric, on the
+    same timeline as the ping graph (pause, drag, zoom and jumping to an
+    incident move them too; hiding a host in the legend hides it here too).
+    Disk latency, CPU and CPU stolen are open by default; click a title to
+    open or close a graph. The dashed line is this PC.
+  - Metrics: CPU %, CPU queue, CPU stolen (VMware: time the host made the VM
+    wait), memory available / committed / paging / ballooned (VMware), disk
+    read and write latency, disk queue and disk I/O.
+  - Each incident lists the worst disk latency, CPU and CPU stolen time of
+    every affected host during the incident (hover for a per-host breakdown).
+  - "Sample every" (1 s to 60 s) changes the interval immediately and saves it.
+  - Reading a remote server uses the Windows account PingWatch runs as. On
+    each server that account must be in "Performance Monitor Users" (or an
+    admin), the Remote Registry service must be running and the "File and
+    Printer Sharing" firewall rule allowed. Servers without access show
+    "no access" and are retried every minute.
+  - Metrics are kept for metrics_retention_days (default 7): about 4.5 MB per
+    host per day at 1-second sampling.
+  Every panel below the targets can be collapsed with the arrow by its title.
+
+REPORT AND PDF
+  Report opens a printable page for the stats window (or, if the graph is
+  paused, exactly the period shown on the graph). Pick a period or a custom
+  From / To range at the top. It contains: summary, ping graph for the
+  period, server metric graphs, incidents with per-host disk / CPU figures and
+  event log counts, then one section per host. "Export PDF" opens the print
+  dialog: choose "Save as PDF" or "Microsoft Print to PDF" (A4 landscape).
+
 EVENT LOGS AROUND INCIDENTS
   30 seconds after an incident ends, PingWatch reads the Windows event logs
   from this PC and from every affected host, from 2 minutes before the
@@ -135,6 +167,9 @@ config.json SETTINGS (edit, then restart PingWatch)
   range_buckets_ms         bucket edges for the "Ranges" pie view
   incident_window_s        10     slow spells starting this close together form one incident
   event_logs               true   collect Windows event logs around incidents
+  metrics                  true   read CPU / memory / disk counters from the hosts
+  metrics_interval_seconds 1      how often (also changeable on the dashboard)
+  metrics_retention_days   7      older metric files are deleted
   host / port              0.0.0.0 / 5055
   open_browser             true
 

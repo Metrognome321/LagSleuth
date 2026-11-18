@@ -113,6 +113,23 @@
   .chip.removed { color: var(--muted); text-decoration: line-through; }
   .tag { font-size: 11px; color: var(--muted); margin-left: 6px; }
   .incs { max-height: 420px; overflow: auto; }
+  /* collapsible panels */
+  .panel > h2 .fold { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 12px; padding: 0 4px 0 0; }
+  .panel > h2 .fold:hover { color: var(--text); }
+  .panel.collapsed > :not(h2) { display: none !important; }
+  .panel.collapsed > h2 { margin-bottom: 0; }
+  /* server metrics */
+  .tcard .mx { color: var(--text-2); font-size: 12px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .tcard .mx.bad { color: var(--warning); }
+  .mstatus { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  .mstatus .bad { color: var(--warning); }
+  .mgrid { display: grid; gap: 8px; }
+  details.mchart { background: var(--surface-2); border-radius: 8px; padding: 6px 12px; }
+  details.mchart > summary { cursor: pointer; color: var(--text-2); font-size: 13px; padding: 4px 0; list-style: none; display: flex; gap: 8px; align-items: center; }
+  details.mchart > summary::before { content: '▸'; color: var(--muted); }
+  details.mchart[open] > summary::before { content: '▾'; }
+  details.mchart > summary .now { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  details.mchart .mbox { position: relative; height: 170px; margin-top: 4px; }
   .logbtn { background: none; border: 1px solid var(--axis); border-radius: 6px; color: var(--text-2); font: inherit; font-size: 12px; padding: 2px 8px; cursor: pointer; white-space: nowrap; }
   .logbtn:hover { background: var(--surface-2); color: var(--text); }
   .logbtn.open { border-color: var(--series); color: var(--text); }
@@ -196,6 +213,18 @@
     <div class="glegend" id="legend"></div>
     <div class="hint" style="margin-top:6px">Drag the graph to scroll back through history · mouse wheel to zoom · Space to pause · ← → to step · click a deviation or heatmap cell to jump to it · click a host in the legend to show only it (click again for all) · Ctrl+click to add or remove one</div>
     <div class="log" id="log"></div>
+  </section>
+
+  <section class="panel full" id="metricsPanel" data-fold="metrics">
+    <h2>Server metrics <span class="sub" id="metSub"></span>
+      <span style="flex:1"></span>
+      <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--muted)">Sample every</span>
+      <select id="metInterval" class="btn" style="padding:3px 6px;text-transform:none;letter-spacing:0;font-weight:400" title="How often CPU / memory / disk counters are read from each server (saved to config.json)">
+        <option value="1">1 s</option><option value="2">2 s</option><option value="5">5 s</option><option value="10">10 s</option><option value="30">30 s</option><option value="60">60 s</option>
+      </select>
+    </h2>
+    <div class="mstatus" id="metStatus">Loading…</div>
+    <div class="mgrid" id="metGrid"></div>
   </section>
 
   <section class="panel full">
@@ -301,6 +330,7 @@ function legendClick(e, label) {
   }
   saveHidden();
   renderGraph();
+  loadMetrics(true);
 }
 const STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400, 172800];
 const tzOff = new Date().getTimezoneOffset() * 60;   // seconds, so ticks land on local clock boundaries
@@ -365,6 +395,7 @@ async function loadGraph() {
   view.data = { start, end, res };
   view.lastLoad = Date.now();
   renderGraph();
+  loadMetrics(!view.live);   // metric graphs follow the ping graph's time window
 }
 
 function renderGraph() {
@@ -772,6 +803,7 @@ function renderTargets(data) {
       <div class="big">${last}</div>
       <div>${status}</div>
       <div class="meta">normal ${fmt(d.baseline)} ms · loss 5m ${d.loss_5m.toFixed(1)}%</div>
+      ${metricLine(n)}
     </div>`;
   }).join('') || '<div class="empty">No targets yet. Add a host or IP above.</div>';
 }
@@ -788,12 +820,20 @@ async function refreshStats() {
   renderEvents(evs);
   refreshIncidents();
   refreshHealth();
-  document.getElementById('reportBtn').href = `/report?minutes=${Math.max(state.minutes, 1440)}`;
+  document.getElementById('reportBtn').href = reportHref();
   document.getElementById('csvEvents').href = `/api/export/events.csv?${q()}` + (state.devScope === 'one' ? `&target=${t}` : '');
   document.getElementById('csvSamples').href = `/api/export/samples.csv?${q()}&target=${t}`;
 }
 
 const rangeLabel = () => document.querySelector('#range .on').textContent;
+// Report: when the graph is paused on a period, report exactly that period; otherwise the stats window (min. 24 h)
+const localISO = ts => { const d = new Date(ts * 1000 - d0off(ts)); return d.toISOString().slice(0, 19); };
+const d0off = ts => new Date(ts * 1000).getTimezoneOffset() * 60000;
+function reportHref() {
+  if (!view.live && view.data) return `/report?from=${localISO(view.data.start)}&to=${localISO(view.data.end)}`;
+  return `/report?minutes=${Math.max(state.minutes, 1440)}`;
+}
+document.getElementById('reportBtn').addEventListener('mousedown', e => { e.currentTarget.href = reportHref(); });
 
 function renderSummary(s) {
   document.getElementById('sumSub').textContent = `${state.target} · last ${rangeLabel()} · ${s.total.toLocaleString()} pings`;
@@ -841,6 +881,170 @@ function renderEvents(evs) {
     : '<tr><td class="empty">No deviations in this window. 👍</td></tr>';
 }
 
+/* ---------------- server metrics ---------------- */
+const MCHARTS = [
+  { id: 'disk', title: 'Disk latency (worst of read / write)', unit: 'ms', keys: ['disk_read', 'disk_write'], open: true },
+  { id: 'cpu', title: 'CPU', unit: '%', keys: ['cpu'], open: true, max: 100 },
+  { id: 'cpu_stolen', title: 'CPU stolen (VMware: time the host made this VM wait)', unit: 'ms', keys: ['cpu_stolen'], open: true },
+  { id: 'mem_avail', title: 'Memory available', unit: 'MB', keys: ['mem_avail'] },
+  { id: 'disk_queue', title: 'Disk queue', unit: 'requests', keys: ['disk_queue'] },
+  { id: 'disk_iops', title: 'Disk I/O', unit: 'IOPS', keys: ['disk_iops'] },
+  { id: 'cpu_queue', title: 'CPU queue', unit: 'threads', keys: ['cpu_queue'] },
+  { id: 'mem_pages', title: 'Paging', unit: 'pages/s', keys: ['mem_pages'] },
+  { id: 'mem_commit', title: 'Memory committed', unit: '%', keys: ['mem_commit'], max: 100 },
+  { id: 'mem_balloon', title: 'Memory ballooned (VMware)', unit: 'MB', keys: ['mem_balloon'] },
+];
+const LOCAL_COLOR = '#c3c2b7';
+const met = { charts: {}, live: {}, open: new Set(MCHARTS.filter(c => c.open).map(c => c.id)), reqId: 0, last: 0 };
+try { const o = JSON.parse(localStorage.getItem('pw.mopen') || 'null'); if (Array.isArray(o)) met.open = new Set(o); } catch {}
+const mLabel = h => h === 'local' ? 'This PC' : h;
+const mColor = h => h === 'local' ? LOCAL_COLOR : (colorFor(h) || C.muted);
+const chartVal = (c, vals) => { let v = null; c.keys.forEach(k => { const x = vals[k]; if (x != null && (v == null || x > v)) v = x; }); return v; };
+
+// typical spacing between samples, so a change of sampling interval is not drawn as gaps
+function medianStep(pts) {
+  if (pts.length < 3) return 0;
+  const d = []; for (let i = 1; i < pts.length; i++) d.push(pts[i].ts - pts[i - 1].ts);
+  d.sort((a, b) => a - b); return d[Math.floor(d.length / 2)];
+}
+function timeAxis() {
+  return { type: 'linear', grid: { color: C.grid }, border: { color: C.axis },
+    ticks: { color: C.muted, maxRotation: 0, autoSkip: false, callback: v => tickLabel(v, view.span) },
+    afterBuildTicks: ax => {
+      const span = ax.max - ax.min, stepS = STEPS.find(s => span / s <= 8) || 172800;
+      const first = Math.ceil((ax.min - tzOff) / stepS) * stepS + tzOff, t = [];
+      for (let v = first; v <= ax.max; v += stepS) t.push({ value: v });
+      ax.ticks = t;
+    } };
+}
+
+function buildMetricGrid() {
+  document.getElementById('metGrid').innerHTML = MCHARTS.map(c => `<details class="mchart" data-m="${c.id}"${met.open.has(c.id) ? ' open' : ''}>
+    <summary>${esc(c.title)} <span class="tag" style="margin:0">${c.unit}</span><span class="now" id="now-${c.id}"></span></summary>
+    <div class="mbox"><canvas id="mc-${c.id}"></canvas></div></details>`).join('');
+  document.querySelectorAll('#metGrid details').forEach(d => d.addEventListener('toggle', () => {
+    d.open ? met.open.add(d.dataset.m) : met.open.delete(d.dataset.m);
+    try { localStorage.setItem('pw.mopen', JSON.stringify([...met.open])); } catch {}
+    if (d.open) loadMetrics(true);
+  }));
+}
+
+function metricChart(c) {
+  if (met.charts[c.id]) return met.charts[c.id];
+  met.charts[c.id] = new Chart(document.getElementById('mc-' + c.id), {
+    type: 'line', data: { datasets: [] },
+    options: { animation: false, maintainAspectRatio: false, parsing: false, normalized: true,
+      interaction: { mode: 'nearest', axis: 'x', intersect: false },
+      scales: { x: timeAxis(), y: { beginAtZero: true, suggestedMax: c.max, grid: { color: C.grid }, border: { color: C.axis }, ticks: { color: C.muted } } },
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { title: it => it.length ? fullTime(it[0].parsed.x) : '', label: x => `${x.dataset.label}: ${fmt(x.parsed.y)} ${c.unit}` } } } },
+  });
+  return met.charts[c.id];
+}
+
+async function loadMetrics(force) {
+  const panel = document.getElementById('metricsPanel');
+  const D = view.data;
+  if (!D || panel.classList.contains('collapsed')) return;
+  const open = MCHARTS.filter(c => met.open.has(c.id));
+  if (!open.length) return;
+  if (!force && Date.now() - met.last < 900) return;
+  met.last = Date.now();
+  const keys = [...new Set(open.flatMap(c => c.keys))];
+  const id = ++met.reqId;
+  const maxPts = Math.max(200, Math.round(document.getElementById('metGrid').clientWidth / 2));
+  const R = await getJSON(`/api/metrics?from=${D.start}&to=${D.end}&max=${maxPts}&metrics=${keys.join(',')}`);
+  if (id !== met.reqId) return;
+  const hosts = Object.keys(R.hosts).sort((a, b) => a === 'local' ? -1 : b === 'local' ? 1 : a.localeCompare(b));
+  for (const c of open) {
+    const ch = metricChart(c);
+    ch.data.datasets = hosts.map(h => {
+      const s = R.hosts[h], gap = Math.max(s.bucket_s || 0, medianStep(s.points), met.interval || 1) * 3.5;
+      const pts = []; let prev = null;
+      s.points.forEach(p => {
+        const vals = {}; R.metrics.forEach((k, j) => vals[k] = p.v[j]);
+        const v = chartVal(c, vals);
+        if (prev != null && p.ts - prev > gap) pts.push({ x: prev + gap / 2, y: null });
+        pts.push({ x: p.ts, y: v });
+        prev = p.ts;
+      });
+      return { label: mLabel(h), data: pts, borderColor: mColor(h), backgroundColor: mColor(h), borderWidth: h === 'local' ? 1.5 : 2,
+        borderDash: h === 'local' ? [4, 3] : undefined, pointRadius: 0, tension: 0, spanGaps: false,
+        hidden: view.hidden.has(mLabel(h)) || pts.every(p => p.y == null) };
+    });
+    ch.options.scales.x.min = D.start; ch.options.scales.x.max = D.end;
+    ch.update('none');
+  }
+}
+
+function metricLine(host) {
+  const l = met.live[host]; if (!l) return '';
+  if (l.status !== 'ok') return `<div class="mx bad" title="${esc(l.error || '')}">metrics: ${l.status === 'connecting' ? 'connecting…' : l.status === 'no_access' ? 'no access' : 'error'}</div>`;
+  const v = l.values || {}, disk = chartVal({ keys: ['disk_read', 'disk_write'] }, v);
+  const mem = v.mem_avail == null ? null : v.mem_avail >= 1024 ? `${(v.mem_avail / 1024).toFixed(1)} GB free` : `${Math.round(v.mem_avail)} MB free`;
+  const parts = [v.cpu != null ? `CPU ${Math.round(v.cpu)}%` : null, disk != null ? `disk ${fmt(disk)} ms` : null, mem,
+                 v.cpu_stolen ? `stolen ${fmt(v.cpu_stolen)} ms` : null].filter(Boolean);
+  return `<div class="mx" title="Live from performance counters">${parts.join(' · ')}</div>`;
+}
+
+async function pollMetricsLive() {
+  try { met.live = await getJSON('/api/metrics/live'); } catch { return; }
+  const hosts = Object.values(met.live);
+  const ok = hosts.filter(h => h.status === 'ok'), bad = hosts.filter(h => h.status === 'no_access' || h.status === 'error');
+  document.getElementById('metStatus').innerHTML = !hosts.length ? 'Server metrics are off (set "metrics": true in config.json).'
+    : `Reading CPU, memory and disk counters every ${met.interval || 1} s from ${ok.length} of ${hosts.length} machine${hosts.length === 1 ? '' : 's'}` +
+      `${hosts.some(h => h.status === 'connecting') ? ' · connecting…' : ''}` +
+      (bad.length ? ` · <span class="bad" title="${esc(bad.map(h => `${h.label}: ${h.error}`).join('\n'))}">no access: ${bad.map(h => esc(h.label)).join(', ')}</span>` +
+        ` <span class="tag">(the account running PingWatch needs Performance Monitor Users, Remote Registry running, and File and Printer Sharing allowed)</span>` : '') +
+      ` · dashed line = this PC · click hosts in the ping graph legend to show or hide them here too`;
+  // "now" readout in each chart's title: the worst current value and which host
+  for (const c of MCHARTS) {
+    const el = document.getElementById('now-' + c.id); if (!el) continue;
+    let worst = null, who = '';
+    ok.forEach(h => { const v = chartVal(c, h.values || {}); if (v != null && (worst == null || (c.id === 'mem_avail' ? v < worst : v > worst))) { worst = v; who = mLabel(h.host); } });
+    el.textContent = worst == null ? '' : `now ${c.id === 'mem_avail' ? 'lowest' : 'worst'} ${fmt(worst)} ${c.unit} (${who})`;
+  }
+}
+
+(async () => {
+  buildMetricGrid();
+  try {
+    const d = await getJSON('/api/metrics/defs');
+    met.interval = d.interval_seconds;
+    const sel = document.getElementById('metInterval');
+    if (![...sel.options].some(o => +o.value === d.interval_seconds)) sel.insertAdjacentHTML('beforeend', `<option value="${d.interval_seconds}">${d.interval_seconds} s</option>`);
+    sel.value = String(d.interval_seconds);
+  } catch {}
+  document.getElementById('metInterval').addEventListener('change', async e => {
+    const r = await getJSON('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ metrics_interval_seconds: +e.target.value }) });
+    met.interval = r.metrics_interval_seconds;
+    toast(`Server metrics now sampled every ${met.interval} s`);
+  });
+  pollMetricsLive();
+  setInterval(pollMetricsLive, 2000);
+})();
+
+/* ---------------- collapsible panels ---------------- */
+(() => {
+  let folded = new Set();
+  try { folded = new Set(JSON.parse(localStorage.getItem('pw.fold') || '[]')); } catch {}
+  document.querySelectorAll('main > section.panel').forEach(sec => {
+    const h2 = sec.querySelector(':scope > h2'); if (!h2) return;
+    const key = sec.dataset.fold || h2.firstChild.textContent.trim();
+    const b = document.createElement('button');
+    b.className = 'fold'; b.type = 'button';
+    const set = c => { sec.classList.toggle('collapsed', c); b.textContent = c ? '▸' : '▾'; b.title = c ? 'Expand' : 'Collapse'; };
+    set(folded.has(key));
+    b.onclick = () => {
+      const c = !sec.classList.contains('collapsed'); set(c);
+      c ? folded.add(key) : folded.delete(key);
+      try { localStorage.setItem('pw.fold', JSON.stringify([...folded])); } catch {}
+      if (!c) { window.dispatchEvent(new Event('resize')); if (sec.id === 'metricsPanel') loadMetrics(true); }
+    };
+    h2.prepend(b);
+  });
+})();
+
 /* ---------------- incidents across hosts ---------------- */
 const inc = { minHosts: 2 };
 async function refreshIncidents() {
@@ -856,7 +1060,7 @@ async function refreshIncidents() {
   const chip = (t, cls, extra = '') => `<span class="chip ${cls}${live.has(t) ? '' : ' removed'}" title="${live.has(t) ? '' : 'no longer monitored'}">${esc(t)}${extra}</span>`;
   document.getElementById('incTable').innerHTML = list.length
     ? `<tr><th>Started</th><th class="n">Duration</th><th class="n">Hosts</th><th>Affected (worst first)</th><th>Stayed normal</th>
-         <th class="n">Peak ms</th><th class="n">Timeouts</th><th class="n">Onset spread</th><th>Monitor</th><th>Event logs</th></tr>` +
+         <th class="n">Peak ms</th><th class="n">Timeouts</th><th class="n">Onset spread</th><th>Server metrics (worst)</th><th>Monitor</th><th>Event logs</th></tr>` +
       list.map(i => `<tr class="jump ${i.ongoing ? 'ongoing' : ''}" title="Show all targets on the graph at this time" data-s="${i.start_ts}" data-e="${i.end_ts}" data-k="${i.key}">
         <td>${dstr(i.start_ts)}${i.ongoing ? ' <span class="pill bad">▲ Ongoing</span>' : ''}</td>
         <td class="n">${dur(i.duration_s)}</td>
@@ -865,6 +1069,7 @@ async function refreshIncidents() {
         <td class="wrap"><div class="hosts">${i.clean.map(t => chip(t, 'clean')).join('') || '<span class="tag">none</span>'}</div></td>
         <td class="n">${fmt(i.peak_ms)}</td><td class="n">${i.timeouts}</td>
         <td class="n">${i.hosts.length > 1 ? dur(i.onset_spread_s) : '–'}</td>
+        <td>${incMetrics(i)}</td>
         <td>${i.monitor_stall_ms != null ? `<span class="pill bad" title="PingWatch itself was paused for ${fmt(i.monitor_stall_ms)} ms during this incident, so these results may not be real">⚠ paused ${fmt(i.monitor_stall_ms)} ms</span>` : '<span class="tag">OK</span>'}</td>
         <td>${logCell(i)}</td></tr>`).join('')
     : `<tr><td class="empty">No ${inc.minHosts > 1 ? 'multi-host ' : ''}incidents in this window. 👍</td></tr>`;
@@ -881,6 +1086,22 @@ function renderLogPanel() {
   const html = i ? `<div class="lpanel"><div class="lhead"><b>Event logs</b> · incident at ${dstr(i.start_ts)} · ${i.hosts.length} host${i.hosts.length === 1 ? '' : 's'} affected
       <span style="flex:1"></span><button class="logbtn" data-close="1">✕ Close</button></div>${logDetail(i)}</div>` : '';
   if (el._html !== html) { el.innerHTML = html; el._html = html; }   // untouched when unchanged, so text stays selectable
+}
+
+// worst disk latency / CPU / stolen across the affected hosts during an incident, with a per-host breakdown on hover
+function incMetrics(i) {
+  const rows = i.hosts.filter(h => h.metrics).map(h => [h.target, h.metrics]);
+  if (i.local_metrics) rows.push(['This PC', i.local_metrics]);
+  if (!rows.length) return '<span class="tag">–</span>';
+  const one = m => { const d = chartVal({ keys: ['disk_read', 'disk_write'] }, m);
+    return [d != null ? `disk ${fmt(d)} ms` : null, m.cpu != null ? `CPU ${Math.round(m.cpu)}%` : null, m.cpu_stolen ? `stolen ${fmt(m.cpu_stolen)} ms` : null,
+            m.mem_avail != null ? `${Math.round(m.mem_avail)} MB free` : null].filter(Boolean).join(' · '); };
+  const hostRows = rows.filter(r => r[0] !== 'This PC').map(r => r[1]);
+  const worst = k => { let v = null; hostRows.forEach(m => { const x = k === 'disk' ? chartVal({ keys: ['disk_read', 'disk_write'] }, m) : m[k]; if (x != null && (v == null || x > v)) v = x; }); return v; };
+  const d = worst('disk'), c = worst('cpu'), s = worst('cpu_stolen');
+  const txt = [d != null ? `<span style="color:${d >= 50 ? C.serious : 'inherit'}">disk ${fmt(d)} ms</span>` : null, c != null ? `CPU ${Math.round(c)}%` : null,
+               s ? `<span style="color:${C.serious}">stolen ${fmt(s)} ms</span>` : null].filter(Boolean).join(' · ') || '<span class="tag">this PC only</span>';
+  return `<span style="white-space:nowrap" title="${esc(rows.map(r => `${r[0]}: ${one(r[1])}`).join('\n'))}">${txt}</span>`;
 }
 
 /* ---------------- event logs per incident ---------------- */

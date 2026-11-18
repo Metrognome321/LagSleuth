@@ -131,35 +131,37 @@ func healthAPI(start, end float64) map[string]any {
 // ---------------------------------------------------------------------------- incidents
 
 type IncidentHost struct {
-	Target     string   `json:"target"`
-	StartTS    float64  `json:"start_ts"`
-	EndTS      float64  `json:"end_ts"`
-	Ongoing    bool     `json:"ongoing"`
-	DevSamples int      `json:"dev_samples"`
-	Timeouts   int      `json:"timeouts"`
-	PeakMs     *float64 `json:"peak_ms"`
-	AvgMs      *float64 `json:"avg_ms"`
-	BaselineMs *float64 `json:"baseline_ms"`
+	Target     string             `json:"target"`
+	StartTS    float64            `json:"start_ts"`
+	EndTS      float64            `json:"end_ts"`
+	Ongoing    bool               `json:"ongoing"`
+	DevSamples int                `json:"dev_samples"`
+	Timeouts   int                `json:"timeouts"`
+	PeakMs     *float64           `json:"peak_ms"`
+	AvgMs      *float64           `json:"avg_ms"`
+	BaselineMs *float64           `json:"baseline_ms"`
+	Metrics    map[string]float64 `json:"metrics,omitempty"` // worst CPU / memory / disk values during the incident
 	sumMs      float64
 	okN        int
 }
 
 type Incident struct {
-	StartTS        float64        `json:"start_ts"`
-	EndTS          float64        `json:"end_ts"`
-	Ongoing        bool           `json:"ongoing"`
-	DurationS      float64        `json:"duration_s"`
-	OnsetSpreadS   float64        `json:"onset_spread_s"` // first to last host going slow
-	Hosts          []IncidentHost `json:"hosts"`
-	Clean          []string       `json:"clean"` // monitored at the time but not affected
-	Monitored      int            `json:"monitored"`
-	DevSamples     int            `json:"dev_samples"`
-	Timeouts       int            `json:"timeouts"`
-	PeakMs         *float64       `json:"peak_ms"`
-	PeakTarget     string         `json:"peak_target"`
-	MonitorStallMs *float64       `json:"monitor_stall_ms"` // PingWatch itself paused during this incident
-	Key            int64          `json:"key"`              // stable id (start, whole seconds) for event logs
-	Logs           *LogSummary    `json:"logs,omitempty"`
+	StartTS        float64            `json:"start_ts"`
+	EndTS          float64            `json:"end_ts"`
+	Ongoing        bool               `json:"ongoing"`
+	DurationS      float64            `json:"duration_s"`
+	OnsetSpreadS   float64            `json:"onset_spread_s"` // first to last host going slow
+	Hosts          []IncidentHost     `json:"hosts"`
+	Clean          []string           `json:"clean"` // monitored at the time but not affected
+	Monitored      int                `json:"monitored"`
+	DevSamples     int                `json:"dev_samples"`
+	Timeouts       int                `json:"timeouts"`
+	PeakMs         *float64           `json:"peak_ms"`
+	PeakTarget     string             `json:"peak_target"`
+	MonitorStallMs *float64           `json:"monitor_stall_ms"`        // PingWatch itself paused during this incident
+	Key            int64              `json:"key"`                     // stable id (start, whole seconds) for event logs
+	LocalMetrics   map[string]float64 `json:"local_metrics,omitempty"` // the PingWatch machine during the incident
+	Logs           *LogSummary        `json:"logs,omitempty"`
 	lastStart      float64
 }
 
@@ -221,9 +223,11 @@ func buildIncidents(start, end float64) []Incident {
 		inc := incs[i]
 		inc.DurationS = inc.EndTS - inc.StartTS
 		hit := map[string]bool{}
+		inc.LocalMetrics = metricPeaks(metricLocal, inc.StartTS-1, inc.EndTS+1)
 		for j := range inc.Hosts {
 			h := &inc.Hosts[j]
 			hit[h.Target] = true
+			h.Metrics = metricPeaks(h.Target, h.StartTS-1, h.EndTS+1)
 			if h.okN > 0 {
 				h.AvgMs = fptr(h.sumMs / float64(h.okN))
 			}

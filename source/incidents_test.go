@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -123,5 +124,41 @@ func TestParseEvents(t *testing.T) {
 	}
 	if logEligible("8.8.8.8") || !logEligible("172.17.220.98") || !logEligible("fileserver01") {
 		t.Error("logEligible wrong")
+	}
+}
+
+func TestMetricStoreSeriesAndPeaks(t *testing.T) {
+	dataDir = t.TempDir()
+	cfg = defaultConfig()
+	mstore = &metricStore{files: map[string]*os.File{}, days: map[string]string{}}
+	now := time.Now()
+	base := float64(time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 0, 0, 0, time.Local).Add(-time.Hour).Unix())
+	n := len(metricDefs)
+	for s := 0; s < 600; s++ {
+		v := make([]float64, n)
+		for i := range v {
+			v[i] = 1
+		}
+		v[2] = math.NaN()        // no VMware counter
+		v[3] = 2000              // memory available
+		if s >= 100 && s < 110 { // a 10 s stall
+			v[7], v[3] = 500, 900
+		}
+		mstore.append("h1", base+float64(s), v)
+	}
+	mstore.close("h1")
+	p := metricPeaks("h1", base+95, base+115)
+	if p["disk_read"] != 500 || p["mem_avail"] != 900 || p["cpu"] != 1 {
+		t.Fatalf("peaks wrong: %v", p)
+	}
+	if _, ok := p["cpu_stolen"]; ok {
+		t.Error("NaN metric should be absent from peaks")
+	}
+	size, pts := metricSeries("h1", base, base+600, 60, metricKeyIndex([]string{"disk_read", "mem_avail"}))
+	if size != 10 || len(pts) != 60 {
+		t.Fatalf("want 60 buckets of 10 s, got %d of %v", len(pts), size)
+	}
+	if *pts[10].V[0] != 500 || *pts[10].V[1] != 900 || *pts[9].V[0] != 1 {
+		t.Errorf("bucket should keep worst values: %v %v / %v", *pts[10].V[0], *pts[10].V[1], *pts[9].V[0])
 	}
 }

@@ -7,35 +7,57 @@
 <style>
   body { font: 13px/1.45 "Segoe UI", system-ui, sans-serif; color: #0b0b0b; background: #f9f9f7; margin: 0; padding: 24px 32px; }
   h1 { font-size: 20px; margin: 0 0 4px; }
-  .meta { color: #52514e; margin-bottom: 18px; }
+  .meta { color: #52514e; margin-bottom: 14px; }
   .toolbar { margin-bottom: 18px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .toolbar a, .toolbar button, .toolbar select { font: inherit; padding: 5px 10px; border: 1px solid #c3c2b7; border-radius: 6px; background: #fcfcfb; color: #0b0b0b; text-decoration: none; cursor: pointer; }
-  section { background: #fcfcfb; border: 1px solid #e1e0d9; border-radius: 10px; padding: 16px 20px; margin-bottom: 18px; page-break-inside: avoid; }
-  h2 { font-size: 16px; margin: 0 0 12px; font-family: ui-monospace, Consolas, monospace; }
+  .toolbar a, .toolbar button, .toolbar select, .toolbar input { font: inherit; padding: 5px 10px; border: 1px solid #c3c2b7; border-radius: 6px; background: #fcfcfb; color: #0b0b0b; text-decoration: none; cursor: pointer; }
+  .toolbar .primary { background: #2a78d6; border-color: #2a78d6; color: #fff; font-weight: 600; }
+  .toolbar .sep { width: 1px; height: 22px; background: #c3c2b7; }
+  section { background: #fcfcfb; border: 1px solid #e1e0d9; border-radius: 10px; padding: 16px 20px; margin-bottom: 18px; page-break-inside: avoid; break-inside: avoid; }
+  section.flow { page-break-inside: auto; break-inside: auto; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  h2.mono { font-family: ui-monospace, Consolas, monospace; }
   h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #52514e; margin: 16px 0 6px; }
   .grid { display: grid; grid-template-columns: 260px 1fr; gap: 24px; align-items: start; }
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; }
   .stat { background: #f0efec; border-radius: 6px; padding: 6px 10px; }
   .stat .k { color: #52514e; font-size: 11px; } .stat .v { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e1e0d9; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e1e0d9; vertical-align: top; }
   th { color: #52514e; font-weight: 500; font-size: 11px; }
+  tr { page-break-inside: avoid; break-inside: avoid; }
   .n { text-align: right; }
   .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
   .none { color: #898781; }
   .verdict { padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; border-left: 4px solid; background: #f0efec; }
-  @media print { body { background: #fff; padding: 0; } .toolbar { display: none; } section { border-color: #ccc; } }
+  .cbox { position: relative; height: 220px; }
+  .cbox.small { height: 170px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: #52514e; margin: 6px 0 2px; font-family: ui-monospace, Consolas, monospace; }
+  .legend i { display: inline-block; width: 16px; height: 3px; border-radius: 2px; vertical-align: 3px; margin-right: 5px; }
+  .mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; }
+  .mgrid h3 { margin-top: 6px; }
+  .small { font-size: 12px; color: #52514e; }
+  @page { size: A4 landscape; margin: 10mm; }
+  @media print {
+    body { background: #fff; padding: 0; font-size: 11.5px; }
+    .toolbar { display: none; }
+    section { border-color: #ccc; padding: 10px 14px; margin-bottom: 10px; }
+    .cbox { height: 200px; } .cbox.small { height: 150px; }
+  }
 </style>
 </head>
 <body>
 <h1>PingWatch latency report</h1>
 <div class="meta" id="meta">Loading…</div>
 <div class="toolbar">
-  <button onclick="window.print()">Print / Save as PDF</button>
+  <button class="primary" id="pdf" title="Opens the print dialog: choose &quot;Save as PDF&quot; (or &quot;Microsoft Print to PDF&quot;) as the printer">⬇ Export PDF</button>
+  <span class="sep"></span>
   <select id="period">
     <option value="60">Last hour</option><option value="360">Last 6 hours</option><option value="1440">Last 24 hours</option>
-    <option value="10080">Last 7 days</option><option value="43200">Last 30 days</option>
+    <option value="10080">Last 7 days</option><option value="43200">Last 30 days</option><option value="custom">Custom…</option>
   </select>
+  <input type="datetime-local" id="from" step="1" title="From"> <span class="small">to</span> <input type="datetime-local" id="to" step="1" title="To">
+  <button id="apply">Apply</button>
+  <span class="sep"></span>
   <select id="mode"><option value="ranges">Ranges</option><option value="exact">Exact ms</option></select>
   <a id="csv">Deviations CSV</a>
   <a id="icsv">Incidents CSV</a>
@@ -48,10 +70,17 @@ const params = new URLSearchParams(location.search);
 if (!params.get('minutes') && !params.get('from')) params.set('minutes', '1440');
 if (!params.get('mode')) params.set('mode', 'ranges');
 const RAMP = ['#86b6ef','#6da7ec','#5598e7','#3987e5','#2a78d6','#256abf','#1c5cab','#184f95','#104281','#0d366b'];
+const CAT = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#0ca30c','#9085e9','#e66767'];
+const LOCAL = '#52514e';
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const ms = v => v == null ? '–' : (v < 10 ? v.toFixed(1) : Math.round(v).toString());
 const ts = t => { const d = new Date(t * 1000); return d.toLocaleDateString() + ' ' + d.toLocaleTimeString(); };
+const hm = t => new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const dur = s => s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.floor(s/60)}m ${Math.round(s%60)}s` : `${Math.floor(s/3600)}h ${Math.floor(s%3600/60)}m`;
+const localISO = t => new Date(t * 1000 - new Date(t * 1000).getTimezoneOffset() * 60000).toISOString().slice(0, 19);
+const charts = [];
+Chart.defaults.font.family = '"Segoe UI", system-ui, sans-serif';
+Chart.defaults.devicePixelRatio = 2;   // crisp graphs in the PDF
 
 function color(s, mode) {
   if (s.kind === 'timeout') return '#d03b3b';
@@ -60,38 +89,142 @@ function color(s, mode) {
   return RAMP[Math.round(s._i / Math.max(1, s._n - 1) * 9)];
 }
 
-for (const id of ['period', 'mode']) {
-  const el = document.getElementById(id);
-  const key = id === 'period' ? 'minutes' : 'mode';
-  if (params.get(key)) el.value = params.get(key);
-  el.onchange = () => { params.set(key, el.value); params.delete('from'); params.delete('to'); location.search = params.toString(); };
-}
+/* ---------- toolbar ---------- */
+const periodSel = document.getElementById('period'), fromIn = document.getElementById('from'), toIn = document.getElementById('to');
+if (params.get('from')) periodSel.value = 'custom'; else periodSel.value = params.get('minutes');
+document.getElementById('mode').value = params.get('mode');
+periodSel.onchange = () => {
+  if (periodSel.value === 'custom') { fromIn.focus(); return; }
+  params.set('minutes', periodSel.value); params.delete('from'); params.delete('to'); location.search = params.toString();
+};
+document.getElementById('apply').onclick = () => {
+  if (!fromIn.value) return alert('Choose a start date and time.');
+  params.delete('minutes'); params.set('from', fromIn.value.length === 16 ? fromIn.value + ':00' : fromIn.value);
+  if (toIn.value) params.set('to', toIn.value.length === 16 ? toIn.value + ':00' : toIn.value); else params.delete('to');
+  location.search = params.toString();
+};
+document.getElementById('mode').onchange = e => { params.set('mode', e.target.value); location.search = params.toString(); };
 document.getElementById('csv').href = '/api/export/events.csv?' + params;
 document.getElementById('raw').href = '/api/export/samples.csv?' + params;
 document.getElementById('icsv').href = '/api/export/incidents.csv?min_hosts=2&' + params;
+document.getElementById('pdf').onclick = () => window.print();
+window.addEventListener('beforeprint', () => charts.forEach(c => c.resize()));
+window.addEventListener('afterprint', () => charts.forEach(c => c.resize()));
 
-fetch('/api/report?' + params).then(r => r.json()).then(R => {
+/* ---------- charts ---------- */
+function timeChart(canvas, datasets, R, unit, yMax) {
+  const span = R.end - R.start;
+  const label = v => { const d = new Date(v * 1000);
+    return span > 2 * 86400 ? d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' }) + ' ' + hm(v) : span > 600 ? hm(v) : d.toLocaleTimeString(); };
+  const c = new Chart(canvas, { type: 'line', data: { datasets },
+    options: { animation: false, maintainAspectRatio: false, parsing: false, normalized: true,
+      scales: { x: { type: 'linear', min: R.start, max: R.end, grid: { color: '#e9e8e2' }, ticks: { color: '#52514e', maxRotation: 0, maxTicksLimit: canvas.parentElement.classList.contains('small') ? 5 : 9, callback: label } },
+                y: { beginAtZero: true, suggestedMax: yMax, grid: { color: '#e9e8e2' }, ticks: { color: '#52514e' }, title: { display: true, text: unit, color: '#52514e' } } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { title: it => it.length ? ts(it[0].parsed.x) : '', label: x => `${x.dataset.label}: ${ms(x.parsed.y)} ${unit}` } } } } });
+  charts.push(c);
+  return c;
+}
+const legendHTML = items => `<div class="legend">${items.map(([l, col, dash]) => `<span><i style="background:${dash ? `repeating-linear-gradient(90deg,${col} 0 4px,transparent 4px 7px)` : col}"></i>${esc(l)}</span>`).join('')}</div>`;
+
+function pingDatasets(series, colorOf) {
+  return series.map(r => {
+    const pts = []; let prev = null;
+    const step = r.bucket_s || 1;
+    r.points.forEach(p => {
+      const t = r.bucket_s ? p.ts + r.bucket_s / 2 : p.ts, y = r.bucket_s ? p.max : p.rtt;
+      if (prev != null && t - prev > step * 3.5) pts.push({ x: prev + step, y: null });
+      pts.push({ x: t, y: y ?? null }); prev = t;
+    });
+    return { label: r.target, data: pts, borderColor: colorOf(r.target), borderWidth: 1.5, pointRadius: 0, tension: 0, spanGaps: false };
+  });
+}
+
+const MREP = [
+  { title: 'Disk latency (worst of read / write)', unit: 'ms', keys: ['disk_read', 'disk_write'] },
+  { title: 'CPU', unit: '%', keys: ['cpu'], max: 100 },
+  { title: 'CPU stolen (VMware)', unit: 'ms', keys: ['cpu_stolen'], optional: true },
+  { title: 'Memory available', unit: 'MB', keys: ['mem_avail'] },
+];
+
+/* ---------- report ---------- */
+fetch('/api/report?' + params).then(r => r.json()).then(async R => {
   const c = R.cfg;
+  fromIn.value = localISO(R.start); toIn.value = localISO(R.end);
   document.getElementById('meta').innerHTML =
-    `Period: <b>${ts(R.start)}</b> to <b>${ts(R.end)}</b> · generated ${ts(R.generated)} · deviation rule: slower than ${c.deviation_factor}× normal and at least ${c.deviation_min_delta_ms} ms above it${c.high_ms ? `, or ≥ ${c.high_ms} ms` : ''}, or a timeout`;
+    `Period: <b>${ts(R.start)}</b> to <b>${ts(R.end)}</b> (${dur(R.end - R.start)}) · generated ${ts(R.generated)} · PingWatch ${esc(R.version || '')}<br>` +
+    `Deviation rule: slower than ${c.deviation_factor}× normal and at least ${c.deviation_min_delta_ms} ms above it${c.high_ms ? `, or ≥ ${c.high_ms} ms` : ''}, or a timeout`;
+  document.title = `PingWatch report ${localISO(R.start).replace('T', ' ')} to ${localISO(R.end).replace('T', ' ')}`;
   const root = document.getElementById('sections');
+  const targets = R.sections.map(s => s.summary.target);
+  const colorOf = t => CAT[targets.indexOf(t) % CAT.length] || '#898781';
+
+  // overview: monitor health + incident finding
   const H = R.health, I = R.incidents, IF = I.finding;
   const icol = IF.status === 'pattern' ? '#ec835a' : IF.status === 'none' ? '#0ca30c' : '#898781';
-  let top = `<section><h2 style="font-family:inherit">Incidents across hosts</h2>
+  root.insertAdjacentHTML('beforeend', `<section><h2>Summary</h2>
+    <div class="verdict" style="border-color:${icol}">${{ pattern: '▲', none: '✔', insufficient: '◌' }[IF.status]} ${esc(IF.text)}</div>
     <div class="verdict" style="border-color:${H.stall_count ? '#fab219' : '#0ca30c'}">${H.stall_count
       ? `⚠ PingWatch itself was paused ${H.stall_count} time(s) in this period (worst ${ms(H.worst_ms)} ms). Pings at those moments may be slow because of the monitoring machine.`
-      : '✔ Monitoring machine kept to time for the whole period, so slow pings below are not caused by PingWatch.'}</div>
-    <div class="verdict" style="border-color:${icol}">${{ pattern: '▲', none: '✔', insufficient: '◌' }[IF.status]} ${esc(IF.text)}</div>`;
-  top += I.multi_host.length ? `<table><tr><th>Started</th><th class="n">Duration</th><th class="n">Hosts</th><th>Affected (peak ms)</th><th>Stayed normal</th><th class="n">Timeouts</th></tr>` +
+      : '✔ The monitoring machine kept to time for the whole period, so the slow pings below are not caused by PingWatch.'}</div>
+    <div class="small">${I.multi_host.length} incident(s) affected more than one host at the same time · ${I.total} incident(s) in total · ${targets.length} target(s)</div></section>`);
+
+  // ping graph over the period (worst ping per time slice, all targets)
+  const maxPts = 700;
+  const series = await Promise.all(targets.map(t => fetch(`/api/samples?target=${encodeURIComponent(t)}&from=${R.start}&to=${R.end}&max=${maxPts}`).then(r => r.json())));
+  const per = series.find(s => s.bucket_s)?.bucket_s;
+  root.insertAdjacentHTML('beforeend', `<section><h2>Ping over the period</h2>
+    <div class="small">${per ? `Each point is the worst ping in ${per < 60 ? per + ' s' : per / 60 + ' min'}, so short spikes stay visible.` : 'Every ping.'}</div>
+    ${legendHTML(targets.map(t => [t, colorOf(t)]))}<div class="cbox"><canvas id="pingChart"></canvas></div></section>`);
+  timeChart(document.getElementById('pingChart'), pingDatasets(series, colorOf), R, 'ms');
+
+  // server metrics over the period
+  try {
+    const keys = [...new Set(MREP.flatMap(m => m.keys))];
+    const M = await fetch(`/api/metrics?from=${R.start}&to=${R.end}&max=${maxPts}&metrics=${keys.join(',')}`).then(r => r.json());
+    const hosts = Object.keys(M.hosts).sort((a, b) => a === 'local' ? -1 : b === 'local' ? 1 : a.localeCompare(b));
+    if (hosts.length) {
+      const mcolor = h => h === 'local' ? LOCAL : colorOf(h);
+      const mlabel = h => h === 'local' ? (M.hosts[h].label || 'This PC') : h;
+      const blocks = [];
+      MREP.forEach((m, n) => {
+        const ds = hosts.map(h => {
+          const s = M.hosts[h], gap = Math.max(s.bucket_s || 1, 1) * 3.5, pts = []; let prev = null;
+          s.points.forEach(p => {
+            let v = null; m.keys.forEach(k => { const x = p.v[M.metrics.indexOf(k)]; if (x != null && (v == null || x > v)) v = x; });
+            if (prev != null && p.ts - prev > gap) pts.push({ x: prev + gap / 2, y: null });
+            pts.push({ x: p.ts, y: v }); prev = p.ts;
+          });
+          return { label: mlabel(h), data: pts, borderColor: mcolor(h), borderWidth: 1.5, borderDash: h === 'local' ? [4, 3] : undefined, pointRadius: 0, tension: 0, spanGaps: false };
+        }).filter(d => d.data.some(p => p.y != null));
+        if (!ds.length && m.optional) return;
+        blocks.push({ m, ds, id: 'met' + n });
+      });
+      root.insertAdjacentHTML('beforeend', `<section><h2>Server metrics over the period</h2>
+        <div class="small">Worst value per time slice from Windows performance counters. Dashed line = the PC running PingWatch.</div>
+        ${legendHTML(hosts.map(h => [mlabel(h), mcolor(h), h === 'local']))}
+        <div class="mgrid">${blocks.map(b => `<div><h3>${esc(b.m.title)} (${b.m.unit})</h3><div class="cbox small"><canvas id="${b.id}"></canvas></div></div>`).join('')}</div></section>`);
+      blocks.forEach(b => timeChart(document.getElementById(b.id), b.ds, R, b.m.unit, b.m.max));
+    }
+  } catch (e) { console.error(e); }
+
+  // incidents across hosts, with server metrics and event log counts
+  const mtxt = m => { if (!m) return '–'; const d = Math.max(m.disk_read ?? -1, m.disk_write ?? -1);
+    return [d >= 0 ? `disk ${ms(d)} ms` : null, m.cpu != null ? `CPU ${Math.round(m.cpu)}%` : null, m.cpu_stolen ? `stolen ${ms(m.cpu_stolen)} ms` : null].filter(Boolean).join(' · ') || '–'; };
+  let inc = `<section class="flow"><h2>Incidents across hosts</h2>`;
+  inc += I.multi_host.length ? `<table><tr><th>Started</th><th class="n">Duration</th><th class="n">Hosts</th><th>Affected: peak ping · worst disk / CPU</th><th>Stayed normal</th><th class="n">Timeouts</th><th>Event logs</th></tr>` +
     I.multi_host.map(i => `<tr><td>${ts(i.start_ts)}</td><td class="n">${dur(i.duration_s)}</td><td class="n">${i.hosts.length} of ${i.monitored}</td>
-      <td>${i.hosts.map(h => `${esc(h.target)} (${ms(h.peak_ms)})`).join(', ')}</td><td>${i.clean.map(esc).join(', ') || '–'}</td><td class="n">${i.timeouts}</td></tr>`).join('') + '</table>'
+      <td>${i.hosts.map(h => `<b>${esc(h.target)}</b> ${ms(h.peak_ms)} ms · ${mtxt(h.metrics)}`).join('<br>')}${i.local_metrics ? `<br><span class="small">This PC: ${mtxt(i.local_metrics)}</span>` : ''}</td>
+      <td>${i.clean.map(esc).join(', ') || '–'}</td><td class="n">${i.timeouts}</td>
+      <td>${i.logs && i.logs.status === 'collected' ? `${i.logs.events} event(s)${i.logs.warnings ? `, ${i.logs.warnings} warning/error` : ''}${i.logs.no_access ? `, ${i.logs.no_access} host(s) no access` : ''}` : (i.logs ? i.logs.status.replace('_', ' ') : '–')}</td></tr>`).join('') + '</table>'
     : '<p class="none">No incident affected more than one host at the same time.</p>';
-  root.insertAdjacentHTML('beforeend', top + '</section>');
+  root.insertAdjacentHTML('beforeend', inc + '</section>');
+
+  // one section per target
   if (!R.sections.length) root.insertAdjacentHTML('beforeend', '<section><p class="none">No targets configured.</p></section>');
   R.sections.forEach((sec, idx) => {
     const s = sec.summary, ev = sec.events, sl = sec.distribution.slices;
     const normal = sl.filter(x => !x.kind); normal.forEach((x, i) => { x._i = i; x._n = normal.length; });
-    let html = `<section><h2>${esc(s.target)}</h2>`;
+    let html = `<section class="flow"><h2 class="mono">${esc(s.target)}</h2>`;
     if (!s.total) { root.insertAdjacentHTML('beforeend', html + '<p class="none">No pings recorded in this period.</p></section>'); return; }
     const border = s.loss_pct > 1 || ev.length > 10 ? '#d03b3b' : ev.length ? '#fab219' : '#0ca30c';
     html += `<div class="verdict" style="border-color:${border}">${ev.length === 0 ? '✔ Stable: no deviations from normal'
@@ -99,7 +232,7 @@ fetch('/api/report?' + params).then(r => r.json()).then(R => {
     const stat = (k, v) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
     html += `<div class="stats">${stat('Pings', s.total.toLocaleString())}${stat('Min ms', ms(s.min))}${stat('Avg ms', ms(s.avg))}${stat('p50 ms', ms(s.p50))}
       ${stat('p95 ms', ms(s.p95))}${stat('p99 ms', ms(s.p99))}${stat('Max ms', ms(s.max))}${stat('Timeouts', s.timeouts)}</div>`;
-    html += `<h3>Response distribution</h3><div class="grid"><div style="height:240px;position:relative"><canvas id="pie${idx}"></canvas></div>
+    html += `<h3>Response distribution</h3><div class="grid"><div style="height:220px;position:relative"><canvas id="pie${idx}"></canvas></div>
       <table><tr><th>Response</th><th class="n">Share</th><th class="n">Pings</th></tr>` +
       [...sl].sort((a, b) => b.count - a.count).map(x => `<tr><td><span class="sw" style="background:${color(x, R.mode)}"></span>${esc(x.label)}</td>
         <td class="n">${x.pct.toFixed(1)}%</td><td class="n">${x.count.toLocaleString()}</td></tr>`).join('') + `</table></div>`;
@@ -107,7 +240,7 @@ fetch('/api/report?' + params).then(r => r.json()).then(R => {
     const fcol = F.status === 'pattern' ? '#ec835a' : F.status === 'none' ? '#0ca30c' : '#898781';
     html += `<h3>Time pattern (minute of the hour)</h3>
       <div class="verdict" style="border-color:${fcol}">${{pattern: '▲', none: '✔', insufficient: '◌'}[F.status]} ${esc(F.text)}</div>
-      <div style="height:200px;position:relative"><canvas id="min${idx}"></canvas></div>`;
+      <div style="height:180px;position:relative"><canvas id="min${idx}"></canvas></div>`;
     html += `<h3>Deviations from normal</h3>` + (ev.length ? `<table><tr><th>Started</th><th>Ended</th><th class="n">Duration</th><th class="n">Deviating pings</th>
       <th class="n">Timeouts</th><th class="n">Peak ms</th><th class="n">Avg ms</th><th class="n">Normal ms</th></tr>` +
       ev.map(e => `<tr><td>${ts(e.start_ts)}</td><td>${e.end_ts ? ts(e.end_ts) : 'ongoing'}</td><td class="n">${dur(e.duration_s)}</td>
@@ -115,20 +248,17 @@ fetch('/api/report?' + params).then(r => r.json()).then(R => {
         <td class="n">${ms(e.baseline_ms)}</td></tr>`).join('') + '</table>' : '<p class="none">None.</p>');
     root.insertAdjacentHTML('beforeend', html + '</section>');
     const bm = sec.pattern.by_minute;
-    new Chart(document.getElementById('min' + idx), { type: 'bar',
+    charts.push(new Chart(document.getElementById('min' + idx), { type: 'bar',
       data: { labels: bm.map(m => ':' + String(m.minute).padStart(2, '0')),
               datasets: [{ data: bm.map(m => m.dev_pct), backgroundColor: bm.map(m => m.flagged ? '#ec835a' : '#2a78d6'),
                            borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: 'bottom', barPercentage: 0.85, categoryPercentage: 0.95 }] },
       options: { maintainAspectRatio: false, animation: false,
         scales: { x: { grid: { display: false }, ticks: { autoSkip: false, maxRotation: 0, color: '#52514e', callback: (v, i) => i % 5 === 0 ? ':' + String(i).padStart(2, '0') : '' } },
                   y: { beginAtZero: true, grid: { color: '#e1e0d9' }, ticks: { color: '#52514e' }, title: { display: true, text: '% of pings deviating', color: '#52514e' } } },
-        plugins: { legend: { display: false }, tooltip: { callbacks: {
-          title: it => `Minute ${it[0].label} past the hour`,
-          label: c => { const m = bm[c.dataIndex]; return [`${m.dev_pct.toFixed(1)}% deviating (${m.dev}/${m.total})`, `hours affected: ${m.hours_dev} of ${m.hours_seen}`, `typical peak ${ms(m.avg_hour_max)} ms`]; } } } } } });
-    new Chart(document.getElementById('pie' + idx), { type: 'pie',
+        plugins: { legend: { display: false } } } }));
+    charts.push(new Chart(document.getElementById('pie' + idx), { type: 'pie',
       data: { labels: sl.map(x => x.label), datasets: [{ data: sl.map(x => x.count), backgroundColor: sl.map(x => color(x, R.mode)), borderColor: '#fcfcfb', borderWidth: 2 }] },
-      options: { maintainAspectRatio: false, animation: false, plugins: { legend: { display: false },
-        tooltip: { callbacks: { label: c => ` ${sl[c.dataIndex].label}: ${sl[c.dataIndex].pct.toFixed(1)}%` } } } } });
+      options: { maintainAspectRatio: false, animation: false, plugins: { legend: { display: false } } } }));
   });
 });
 </script>

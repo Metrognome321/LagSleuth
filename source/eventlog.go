@@ -224,7 +224,8 @@ func collectHost(host, label string, from, to float64) HostLogs {
 func isAccessError(err error) bool {
 	s := strings.ToLower(err.Error())
 	for _, k := range []string{"access is denied", "rpc server is unavailable", "timed out", "network path was not found",
-		"not found or access", "unknown host", "failed to open event query", "no such host", "logon failure", "endpoint mapper"} {
+		"not found or access", "unknown host", "failed to open event query", "no such host", "logon failure", "endpoint mapper",
+		"could not be reached"} {
 		if strings.Contains(s, k) {
 			return true
 		}

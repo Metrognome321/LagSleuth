@@ -10,13 +10,19 @@ One exe. No install, no admin rights, no Python, no database, no internet connec
 
 [**⬇ Download the latest release**](https://github.com/Metrognome321/LagSleuth/releases/latest)
 
-![LagSleuth dashboard: host cards with live CPU, disk and top processes, and the ping graph paused on an incident where six hosts stall at once](screenshots/dashboard.png)
+[![LagSleuth in 30 seconds: live ping graph, incidents across hosts, event logs, server metrics, top processes and the hourly time pattern](media/lagsleuth-preview.gif)](media/lagsleuth-promo.mp4)
 
-<sub>Screenshots use simulated, fictional hosts and data.</sub>
+▶ [**Watch the 30-second video**](media/lagsleuth-promo.mp4) (1080p, MP4)
+
+<sub>The video and screenshots use simulated, fictional hosts and data.</sub>
 
 ---
 
 ## Screenshots
+
+**Dashboard:** a card per host with live ping, CPU, disk and top processes, and the ping graph paused on an incident where six hosts stall at once.
+
+![LagSleuth dashboard: host cards with live CPU, disk and top processes, and the ping graph paused on an incident where six hosts stall at once](screenshots/dashboard.png)
 
 **Server metrics:** disk latency, CPU and VMware CPU stolen time from every server, on the same timeline as the ping graph.
 

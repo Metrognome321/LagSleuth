@@ -8,6 +8,34 @@ One exe. No install, no admin rights, no Python, no database, no internet connec
 
 [**⬇ Download the latest release**](https://github.com/Metrognome321/PingWatch/releases/latest)
 
+![PingWatch dashboard: host cards with live CPU, disk and top processes, and the ping graph paused on an incident where six hosts stall at once](screenshots/dashboard.png)
+
+<sub>Screenshots use simulated, fictional hosts and data.</sub>
+
+---
+
+## Screenshots
+
+**Server metrics:** disk latency, CPU and VMware CPU stolen time from every server, on the same timeline as the ping graph.
+
+![Server metrics graphs showing disk latency, CPU and CPU stolen spiking on the same hosts at the same moment as the ping stall](screenshots/metrics.png)
+
+**Top processes:** which applications were using the CPU, per server, over any period.
+
+![Top processes panel: CPU per process over 30 minutes with a spike from VSSVC and vmtoolsd at the top of the hour, and a ranking table](screenshots/processes.png)
+
+**Incidents across hosts:** one row per incident, with the hosts hit, the hosts that stayed normal, server metrics, the busiest process, and the Windows event logs from around that moment.
+
+![Incidents table with an expanded event log panel showing shadow copy, VMware Tools and disk retry events on each affected host](screenshots/incidents.png)
+
+**Time pattern:** spots problems that come back at the same minute every hour.
+
+![Time pattern panel: by-minute chart and hour-by-minute heatmap showing high ping recurring at :00 past the hour](screenshots/pattern.png)
+
+**Report:** a printable report for any period, exportable to PDF.
+
+![Printable report with summary, ping graph and server metric graphs over 8 hours, and the incidents table](screenshots/report.png)
+
 ---
 
 ## Features

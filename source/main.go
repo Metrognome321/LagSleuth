@@ -569,6 +569,12 @@ func simulated(t string) float64 {
 	if simSharedStall(t) && st.base < 20 && rand.Float64() < 0.7 {
 		return st.base*20 + rand.Float64()*300
 	}
+	if _, fromHistory := simBase[t]; fromHistory { // continuing stored history (demos): quiet apart from the shared stall
+		if st.base < 1 {
+			return []float64{0.5, 0.5, 0.5, 0.5, 1}[rand.Intn(5)]
+		}
+		return st.base + float64(rand.Intn(3))
+	}
 	if st.spike > 0 {
 		st.spike--
 		if rand.Float64() < 0.2 {

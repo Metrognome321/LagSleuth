@@ -1418,8 +1418,9 @@ document.getElementById('addForm').addEventListener('submit', async e => {
    ?scope=all          overlay all targets on the graph
    ?focus=<panel id>   scroll to a panel (graphPanel, metricsPanel, incidentsPanel, patternPanel)
    ?logs=latest        open the event logs of the newest incident that has them
-   ?only=<id>,<id>     show only these panels (targets, graphPanel, metricsPanel, patternPanel, incidentsPanel),
-                       e.g. for a wall display or a screenshot */
+   ?only=<id>,<id>     show only these panels (targets, graphPanel, metricsPanel, procPanel, patternPanel,
+                       incidentsPanel), e.g. for a wall display or a screenshot
+   ?target=<host>      select that host's card (summary, time pattern, top processes follow it) */
 (() => {
   const p = new URLSearchParams(location.search);
   if (![...p.keys()].length) return;
@@ -1428,8 +1429,10 @@ document.getElementById('addForm').addEventListener('submit', async e => {
   const w = p.get('window');
   if (w) { const b = document.querySelector(`#range [data-m="${w}"]`); if (b) { document.querySelectorAll('#range button').forEach(x => x.classList.toggle('on', x === b)); state.minutes = +w; } }
   if (p.get('scope') === 'all') { state.liveScope = 'all'; document.querySelectorAll('#liveScope button').forEach(x => x.classList.toggle('on', x.dataset.v === 'all')); }
+  if (p.get('target')) state.target = p.get('target');   // kept if that host exists (renderTargets falls back otherwise)
   const from = +p.get('from'), to = +p.get('to');
   setTimeout(async () => {
+    if (p.get('target')) { refreshStats(); refreshPattern(); }
     if (from && to > from) setView(from, to);
     if (p.get('logs') === 'latest') {
       for (let i = 0; i < 20 && !(inc.list || []).length; i++) await new Promise(r => setTimeout(r, 250));

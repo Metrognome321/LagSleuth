@@ -2,7 +2,7 @@ package main
 
 // Windows event logs around incidents.
 //
-// After an incident ends, PingWatch reads Critical/Error/Warning events (plus a few informational ones that
+// After an incident ends, LagSleuth reads Critical/Error/Warning events (plus a few informational ones that
 // explain stalls) from the machine it runs on and from each affected host, for a window around the incident.
 // The results are stored per incident and shown under it on the dashboard.
 
@@ -418,7 +418,7 @@ func simEvents(host string, ch LogChannel, from, to float64) []LogEvent {
 	mid := from + logBefore
 	pc := host
 	if pc == "" {
-		pc = "PINGWATCH-PC"
+		pc = "LAGSLEUTH-PC"
 	}
 	if ch.Name == "Application" {
 		return []LogEvent{

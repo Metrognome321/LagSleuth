@@ -104,7 +104,7 @@ func (p *Pinger) Ping(host string, timeoutMs int) float64 {
 		return pingExe(host, timeoutMs)
 	}
 	dest := uint32(ip[0]) | uint32(ip[1])<<8 | uint32(ip[2])<<16 | uint32(ip[3])<<24
-	payload := []byte("PingWatchPingWatchPingWatchPingW") // 32 bytes like ping.exe
+	payload := []byte("LagSleuthLagSleuthLagSleuthLagSl") // 32 bytes like ping.exe
 	reply := make([]byte, int(unsafe.Sizeof(icmpEchoReply{}))+len(payload)+8+64)
 	n, _, _ := procIcmpSend.Call(p.handle, uintptr(dest),
 		uintptr(unsafe.Pointer(&payload[0])), uintptr(len(payload)), 0,

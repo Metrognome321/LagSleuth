@@ -1,4 +1,4 @@
-// PingWatch - continuous multi-host ping monitor with latency distribution and deviation reporting.
+// LagSleuth - continuous multi-host ping monitor with latency distribution and deviation reporting.
 // Single self-contained executable: web UI, Chart.js and storage are all built in.
 package main
 
@@ -73,11 +73,11 @@ var (
 	cfgMu    sync.Mutex
 	dataDir  string
 	cfgPath  string
-	simulate = os.Getenv("PINGWATCH_SIMULATE") == "1"
+	simulate = os.Getenv("LAGSLEUTH_SIMULATE") == "1" || os.Getenv("PINGWATCH_SIMULATE") == "1" // old name still accepted
 	hostRE   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.\-:]{0,252}$`)
 )
 
-// pick a writable home: next to the exe (portable), else %LOCALAPPDATA%\PingWatch
+// pick a writable home: next to the exe (portable), else %LOCALAPPDATA%\LagSleuth
 func resolveDataDir(override string) string {
 	if override != "" {
 		os.MkdirAll(override, 0o755)
@@ -85,7 +85,7 @@ func resolveDataDir(override string) string {
 	}
 	if exe, err := os.Executable(); err == nil {
 		dir := filepath.Dir(exe)
-		test := filepath.Join(dir, ".pingwatch_write_test")
+		test := filepath.Join(dir, ".lagsleuth_write_test")
 		if f, err := os.Create(test); err == nil {
 			f.Close()
 			os.Remove(test)
@@ -96,9 +96,20 @@ func resolveDataDir(override string) string {
 	if err != nil {
 		base = os.TempDir()
 	}
-	dir := filepath.Join(base, "PingWatch")
+	dir := filepath.Join(base, "LagSleuth")
+	if !isDir(dir) {
+		// keep using the folder from before the rename (PingWatch) so config and history carry over
+		if old := filepath.Join(base, "PingWatch"); isDir(old) {
+			return old
+		}
+	}
 	os.MkdirAll(dir, 0o755)
 	return dir
+}
+
+func isDir(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.IsDir()
 }
 
 func loadConfig() {
@@ -1093,7 +1104,7 @@ func pattern(target string, start, end float64) map[string]any {
 	switch {
 	case len(rows) < 4:
 		f.Status = "insufficient"
-		f.Text = "Need at least 4 hours of data to confirm an hourly pattern. Leave PingWatch running and pick the 24h or 7d window."
+		f.Text = "Need at least 4 hours of data to confirm an hourly pattern. Leave LagSleuth running and pick the 24h or 7d window."
 	case totalDev == 0:
 		f.Status = "none"
 		f.Text = fmt.Sprintf("No deviations in %d hours of data, so there is no recurring slow period.", len(rows))
@@ -1406,7 +1417,7 @@ func routes() *http.ServeMux {
 		start, end := window(r)
 		evs := eventsIn(r.URL.Query().Get("target"), start, end, 1<<30)
 		w.Header().Set("Content-Type", "text/csv")
-		w.Header().Set("Content-Disposition", "attachment; filename=pingwatch_deviations.csv")
+		w.Header().Set("Content-Disposition", "attachment; filename=lagsleuth_deviations.csv")
 		cw := csv.NewWriter(w)
 		cw.Write([]string{"target", "start", "end", "duration_s", "deviating_pings", "timeouts", "peak_ms", "avg_ms", "baseline_ms", "threshold_ms"})
 		for i := len(evs) - 1; i >= 0; i-- {
@@ -1428,7 +1439,7 @@ func routes() *http.ServeMux {
 			targets = []string{t}
 		}
 		w.Header().Set("Content-Type", "text/csv")
-		w.Header().Set("Content-Disposition", "attachment; filename=pingwatch_samples.csv")
+		w.Header().Set("Content-Disposition", "attachment; filename=lagsleuth_samples.csv")
 		cw := csv.NewWriter(w)
 		cw.Write([]string{"timestamp", "target", "rtt_ms", "deviation"})
 		for _, t := range targets {
@@ -1452,7 +1463,7 @@ func routes() *http.ServeMux {
 // ---------------------------------------------------------------------------- main
 
 func main() {
-	dataFlag := flag.String("data", "", "folder for config.json and data (default: next to the exe, or %LOCALAPPDATA%\\PingWatch)")
+	dataFlag := flag.String("data", "", "folder for config.json and data (default: next to the exe, or %LOCALAPPDATA%\\LagSleuth)")
 	portFlag := flag.Int("port", 0, "override web port")
 	noBrowser := flag.Bool("no-browser", false, "don't open the browser on start")
 	flag.Parse()
@@ -1470,7 +1481,7 @@ func main() {
 	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		fmt.Printf("\nCould not start the web server on %s:\n  %v\n\nIs PingWatch already running? Otherwise change \"port\" in %s\n", addr, err, cfgPath)
+		fmt.Printf("\nCould not start the web server on %s:\n  %v\n\nIs LagSleuth already running? Otherwise change \"port\" in %s\n", addr, err, cfgPath)
 		pauseBeforeExit()
 		os.Exit(1)
 	}
@@ -1490,7 +1501,7 @@ func main() {
 	if simulate {
 		mode = "SIMULATED"
 	}
-	fmt.Printf("PingWatch %s  (%s pings)\n\n  Dashboard: %s\n  Data:      %s\n  Targets:   %s\n\nLeave this window open while monitoring. Close it (or Ctrl+C) to stop.\n",
+	fmt.Printf("LagSleuth %s  (%s pings)\n\n  Dashboard: %s\n  Data:      %s\n  Targets:   %s\n\nLeave this window open while monitoring. Close it (or Ctrl+C) to stop.\n",
 		version, mode, url, dataDir, strings.Join(cfg.Targets, ", "))
 	if cfg.OpenBrowser && !*noBrowser {
 		openBrowser(url)

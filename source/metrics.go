@@ -44,7 +44,7 @@ var metricDefs = []Metric{
 	{"disk_iops", "Disk I/O", "IOPS", `\PhysicalDisk(_Total)\Disk Transfers/sec`, 1, "max"},
 }
 
-const metricLocal = "local" // storage/API name for the machine PingWatch runs on
+const metricLocal = "local" // storage/API name for the machine LagSleuth runs on
 
 var metricRec = 8 + 4*len(metricDefs) // float64 ts + float32 per metric (NaN = not available)
 

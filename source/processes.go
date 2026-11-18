@@ -324,7 +324,7 @@ func (s *simSource) processes() ([]ProcSample, error) {
 	stall := s.host != metricLocal && simSharedStall(s.host)
 	j := func(b, sp float64) float64 { return math.Max(0, math.Round((b+(rand.Float64()-0.5)*sp)*10)/10) }
 	cpu := map[string]float64{"_Total": 100, "System": j(1, 1), "svchost": j(1.5, 2), "svchost#1": j(0.6, 1), "MsMpEng": j(0.8, 1.5),
-		"vmtoolsd": j(0.3, 0.4), "explorer": j(0.2, 0.3), "w3wp": j(3, 4), "sqlservr": j(4, 5), "PingWatch": j(0.4, 0.4), "lsass": j(0.2, 0.3), "VSSVC": 0}
+		"vmtoolsd": j(0.3, 0.4), "explorer": j(0.2, 0.3), "w3wp": j(3, 4), "sqlservr": j(4, 5), "LagSleuth": j(0.4, 0.4), "lsass": j(0.2, 0.3), "VSSVC": 0}
 	if strings.HasSuffix(s.host, ".13") {
 		cpu["sqlservr"] = j(18, 12)
 	}
@@ -332,7 +332,7 @@ func (s *simSource) processes() ([]ProcSample, error) {
 		cpu["VSSVC"], cpu["vmtoolsd"], cpu["sqlservr"], cpu["System"] = j(14, 8), j(9, 6), j(22, 14), j(6, 4)
 	}
 	mem := map[string]float64{"System": 0.2, "svchost": 60, "svchost#1": 25, "MsMpEng": 210, "vmtoolsd": 28, "explorer": 70, "w3wp": 480,
-		"sqlservr": 3100, "PingWatch": 22, "lsass": 18, "VSSVC": 6}
+		"sqlservr": 3100, "LagSleuth": 22, "lsass": 18, "VSSVC": 6}
 	for k, v := range mem {
 		mem[k] = v * 1048576
 	}

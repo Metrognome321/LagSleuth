@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>PingWatch</title>
+<title>LagSleuth</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="/static/chart.umd.min.js"></script>
 <style>
@@ -170,14 +170,14 @@
 </head>
 <body>
 <header>
-  <h1>PingWatch</h1>
+  <h1>LagSleuth</h1>
   <form id="addForm" class="controls">
     <input id="newTarget" placeholder="Add hosts / IPs (comma or space separated)" size="38">
     <button class="btn" type="submit">Add</button>
   </form>
   <div class="spacer"></div>
   <div class="controls">
-    <span class="health" id="health" title="Checks that PingWatch itself kept running on time">◌ Monitor</span>
+    <span class="health" id="health" title="Checks that LagSleuth itself kept running on time">◌ Monitor</span>
     <span style="color:var(--muted)">Stats window</span>
     <div class="seg" id="range">
       <button data-m="15">15m</button><button data-m="60" class="on">1h</button><button data-m="360">6h</button>
@@ -629,7 +629,7 @@ function graphImage() {
   g.fillStyle = C.text; g.font = `600 ${15 * dpr}px "Segoe UI", system-ui, sans-serif`; g.textBaseline = 'middle';
   const D = view.data;
   const tgt = D.res.length === 1 ? D.res[0].target : D.res.map(r => r.target).filter(t => !view.hidden.has(t)).join(', ');
-  g.fillText(`PingWatch · ${tgt}`, 12 * dpr, 16 * dpr);
+  g.fillText(`LagSleuth · ${tgt}`, 12 * dpr, 16 * dpr);
   g.fillStyle = C.text2; g.font = `${12 * dpr}px "Segoe UI", system-ui, sans-serif`;
   g.fillText(`${fullTime(D.start)} → ${fullTime(D.end)}`, 12 * dpr, 34 * dpr);
   g.drawImage(src, 0, head);
@@ -653,7 +653,7 @@ document.getElementById('saveBtn').onclick = () => {
   const a = document.createElement('a');
   const d = new Date(view.data.end * 1000);
   const stamp = d.toISOString().slice(0, 19).replace(/[:T]/g, '-');
-  a.download = `pingwatch_${(state.liveScope === 'all' ? 'all' : state.target).replace(/[^\w.-]/g, '_')}_${stamp}.png`;
+  a.download = `lagsleuth_${(state.liveScope === 'all' ? 'all' : state.target).replace(/[^\w.-]/g, '_')}_${stamp}.png`;
   a.href = graphImage().toDataURL('image/png'); a.click();
 };
 document.getElementById('copyBtn').onclick = () => {
@@ -1030,7 +1030,7 @@ async function pollMetricsLive() {
     : `Reading CPU, memory and disk counters every ${met.interval || 1} s from ${ok.length} of ${hosts.length} machine${hosts.length === 1 ? '' : 's'}` +
       `${hosts.some(h => h.status === 'connecting') ? ' · connecting…' : ''}` +
       (bad.length ? ` · <span class="bad" title="${esc(bad.map(h => `${h.label}: ${h.error}`).join('\n'))}">no access: ${bad.map(h => esc(h.label)).join(', ')}</span>` +
-        ` <span class="tag">(the account running PingWatch needs Performance Monitor Users, Remote Registry running, and File and Printer Sharing allowed)</span>` : '') +
+        ` <span class="tag">(the account running LagSleuth needs Performance Monitor Users, Remote Registry running, and File and Printer Sharing allowed)</span>` : '') +
       ` · dashed line = this PC · untick hosts on their cards (Ctrl+click = only that host) or click them in a legend to hide them` +
       (view.hidden.size ? ` · <a href="#" data-showall="1" style="color:var(--series)">show all hosts (${view.hidden.size} hidden)</a>` : '');
   // "now" readout in each chart's title: the worst current value and which host
@@ -1171,7 +1171,7 @@ async function refreshIncidents() {
         <td class="n">${fmt(i.peak_ms)}</td><td class="n">${i.timeouts}</td>
         <td class="n">${i.hosts.length > 1 ? dur(i.onset_spread_s) : '–'}</td>
         <td>${incMetrics(i)}</td>
-        <td>${i.monitor_stall_ms != null ? `<span class="pill bad" title="PingWatch itself was paused for ${fmt(i.monitor_stall_ms)} ms during this incident, so these results may not be real">⚠ paused ${fmt(i.monitor_stall_ms)} ms</span>` : '<span class="tag">OK</span>'}</td>
+        <td>${i.monitor_stall_ms != null ? `<span class="pill bad" title="LagSleuth itself was paused for ${fmt(i.monitor_stall_ms)} ms during this incident, so these results may not be real">⚠ paused ${fmt(i.monitor_stall_ms)} ms</span>` : '<span class="tag">OK</span>'}</td>
         <td>${logCell(i)}</td></tr>`).join('')
     : `<tr><td class="empty">No ${inc.minHosts > 1 ? 'multi-host ' : ''}incidents in this window. 👍</td></tr>`;
   inc.list = list;
@@ -1246,7 +1246,7 @@ function logDetail(i) {
     const ih = h.host ? i.hosts.find(x => x.target === h.host) : null, tps = h.host ? ih && ih.top_procs : i.local_top_procs;
     const procTxt = tps && tps.length ? `<span class="st" title="Busiest processes during the incident (share of the whole machine)">· busiest: ${tps.map(p => `${esc(p.name)} ${Math.round(p.max_cpu)}%`).join(', ')}</span>` : '';
     html += `<div class="lhost">${esc(h.label)}${comp} ${st} ${skipped} ${procTxt}</div>`;
-    if (h.status === 'no_access' && h.host) html += `<div class="tag" style="margin:0 0 6px">To allow this: add the account PingWatch runs as to "Event Log Readers" on ${esc(h.host)} and enable the "Remote Event Log Management" firewall rule there.</div>`;
+    if (h.status === 'no_access' && h.host) html += `<div class="tag" style="margin:0 0 6px">To allow this: add the account LagSleuth runs as to "Event Log Readers" on ${esc(h.host)} and enable the "Remote Event Log Management" firewall rule there.</div>`;
     if (!h.events.length) continue;
     html += '<table class="levs">' + h.events.map((e, n) => {
       const inside = e.ts >= i.start_ts - 2 && e.ts <= i.end_ts + 2;
@@ -1322,11 +1322,11 @@ async function refreshHealth() {
   if (h.stall_count === 0) {
     el.className = 'health ok';
     el.textContent = `● Monitor OK${h.simulated ? ' · SIMULATED' : ''}`;
-    el.title = `PingWatch ${h.version} kept to time for the whole stats window (no pause over ${h.stall_threshold_ms} ms). Running since ${dstr(h.started_ts)}.`;
+    el.title = `LagSleuth ${h.version} kept to time for the whole stats window (no pause over ${h.stall_threshold_ms} ms). Running since ${dstr(h.started_ts)}.`;
   } else {
     el.className = 'health warn';
     el.textContent = `⚠ Monitor paused ${h.stall_count}×`;
-    el.title = `PingWatch itself was paused ${h.stall_count} time(s) in this window, worst ${fmt(h.worst_ms)} ms, last at ${dstr(h.last_ts)}.\n` +
+    el.title = `LagSleuth itself was paused ${h.stall_count} time(s) in this window, worst ${fmt(h.worst_ms)} ms, last at ${dstr(h.last_ts)}.\n` +
       `Pings around those moments may look slow because of this machine, not the network.`;
   }
 }

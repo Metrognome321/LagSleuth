@@ -1,4 +1,4 @@
-PingWatch 1.6 - multi-host ping monitor
+LagSleuth 1.6 - multi-host ping monitor
 =======================================
 
 Runs on any Windows 10 / 11 or Windows Server 2016+ machine.
@@ -6,15 +6,15 @@ No install, no Python, no admin rights needed.
 
 QUICK START
   1. Copy this folder anywhere (desktop, USB stick, a server share copied locally).
-  2. Double-click PingWatch.exe.
+  2. Double-click LagSleuth.exe.
      It opens the dashboard in your browser at http://localhost:5055.
   3. Add the hosts / IPs to watch. You can paste a list separated by commas or spaces.
-  Keep the black console window open while monitoring. Closing it stops PingWatch.
+  Keep the black console window open while monitoring. Closing it stops LagSleuth.
 
 WHICH EXE?
-  PingWatch.exe                      normal 64-bit Windows (almost every PC/server)
-  other-builds\PingWatch-32bit.exe   old 32-bit Windows 10
-  other-builds\PingWatch-ARM64.exe   ARM laptops (Surface Pro X / Snapdragon)
+  LagSleuth.exe                      normal 64-bit Windows (almost every PC/server)
+  other-builds\LagSleuth-32bit.exe   old 32-bit Windows 10
+  other-builds\LagSleuth-ARM64.exe   ARM laptops (Surface Pro X / Snapdragon)
 
 FIRST RUN PROMPTS
   - "Windows protected your PC" (SmartScreen): the exe isn't code-signed.
@@ -24,18 +24,18 @@ FIRST RUN PROMPTS
     To keep it local only, set "host": "127.0.0.1" in config.json.
 
 WHERE THINGS ARE SAVED
-  config.json and a data\ folder are created next to PingWatch.exe.
+  config.json and a data\ folder are created next to LagSleuth.exe.
   If that folder is read-only (e.g. Program Files), they go to
-  %LOCALAPPDATA%\PingWatch instead. The console window shows which.
+  %LOCALAPPDATA%\LagSleuth instead. The console window shows which.
   Samples are kept for 30 days (retention_days).
 
 COMMAND LINE OPTIONS
-  PingWatch.exe -port 8080         use a different port
-  PingWatch.exe -no-browser        don't open the browser (e.g. when started at logon)
-  PingWatch.exe -data D:\pingdata  keep config + data somewhere else
+  LagSleuth.exe -port 8080         use a different port
+  LagSleuth.exe -no-browser        don't open the browser (e.g. when started at logon)
+  LagSleuth.exe -data D:\pingdata  keep config + data somewhere else
 
   To start it automatically at logon, put a shortcut to
-  "PingWatch.exe -no-browser" in shell:startup.
+  "LagSleuth.exe -no-browser" in shell:startup.
 
 PING GRAPH: PAUSE AND HISTORY
   The graph runs live by default (green LIVE badge).
@@ -85,7 +85,7 @@ INCIDENTS ACROSS HOSTS
     graph at that moment. Export CSV is ready to attach to a ticket.
 
 SERVER METRICS (CPU, MEMORY, DISK)
-  PingWatch reads Windows performance counters every second from this PC and
+  LagSleuth reads Windows performance counters every second from this PC and
   from every monitored host with a private address, and shows them live:
   - On each host card: CPU, disk latency and free memory right now.
   - In the Server metrics panel: one collapsible graph per metric, on the
@@ -99,7 +99,7 @@ SERVER METRICS (CPU, MEMORY, DISK)
   - Each incident lists the worst disk latency, CPU and CPU stolen time of
     every affected host during the incident (hover for a per-host breakdown).
   - "Sample every" (1 s to 60 s) changes the interval immediately and saves it.
-  - Reading a remote server uses the Windows account PingWatch runs as. On
+  - Reading a remote server uses the Windows account LagSleuth runs as. On
     each server that account must be in "Performance Monitor Users" (or an
     admin), the Remote Registry service must be running and the "File and
     Printer Sharing" firewall rule allowed. Servers without access show
@@ -116,7 +116,7 @@ SHOWING ONLY SOME SERVERS
   ping graph legend. Your choice is remembered in the browser.
 
 TOP PROCESSES (WHAT IS USING THE CPU)
-  Every 5 seconds (process_interval_seconds) PingWatch also records the 10
+  Every 5 seconds (process_interval_seconds) LagSleuth also records the 10
   busiest processes on each machine, with CPU as a share of the whole machine
   (like Task Manager) and private memory.
   - Host cards show the busiest processes right now ("top: sqlservr 22%").
@@ -137,7 +137,7 @@ REPORT AND PDF
   dialog: choose "Save as PDF" or "Microsoft Print to PDF" (A4 landscape).
 
 EVENT LOGS AROUND INCIDENTS
-  30 seconds after an incident ends, PingWatch reads the Windows event logs
+  30 seconds after an incident ends, LagSleuth reads the Windows event logs
   from this PC and from every affected host, from 2 minutes before the
   incident to 1 minute after. Click "Event logs" on the incident row to see
   them, grouped by host, with the time relative to the incident start.
@@ -147,7 +147,7 @@ EVENT LOGS AROUND INCIDENTS
     Update, Storport and Time-Service.
   - Short single-host blips are not collected automatically; use "Collect".
   - Public addresses (e.g. 8.8.8.8) are skipped.
-  - Reading a remote server's logs uses the Windows account PingWatch runs as.
+  - Reading a remote server's logs uses the Windows account LagSleuth runs as.
     On each server, that account must be in the "Event Log Readers" group (or
     be an admin) and the "Remote Event Log Management" firewall rule must be
     enabled. Servers without access show "no access" and are retried after
@@ -157,14 +157,14 @@ EVENT LOGS AROUND INCIDENTS
   - Set "event_logs": false in config.json to turn this off.
 
 MONITOR SELF-CHECK
-  The badge in the header checks that PingWatch itself kept running on time.
-  If the PingWatch machine is paused for more than 250 ms (busy, frozen VM,
+  The badge in the header checks that LagSleuth itself kept running on time.
+  If the LagSleuth machine is paused for more than 250 ms (busy, frozen VM,
   sleep), the badge turns amber ("Monitor paused 2x") and any incident at that
   moment is marked "paused". Pings then may look slow because of the
   monitoring machine rather than the network.
 
 UPGRADING
-  Replace PingWatch.exe with the new one. config.json and the data folder are
+  Replace LagSleuth.exe with the new one. config.json and the data folder are
   kept, so existing history and events carry over.
 
 HOW "NORMAL" AND "DEVIATION" WORK
@@ -174,7 +174,7 @@ HOW "NORMAL" AND "DEVIATION" WORK
   Optional  "high_ms": e.g. 100 means anything >= 100 ms always counts.
   An event opens on the first deviating ping and closes after 5 normal pings in a row.
 
-config.json SETTINGS (edit, then restart PingWatch)
+config.json SETTINGS (edit, then restart LagSleuth)
   targets                  hosts to ping (also editable in the dashboard)
   interval_seconds         1      gap between pings per host
   timeout_ms               1000
@@ -196,4 +196,4 @@ config.json SETTINGS (edit, then restart PingWatch)
 
 SOURCE
   source\ holds the Go code. To rebuild, install Go 1.22+ and run (from source\):
-    go build -ldflags "-s -w" -o PingWatch.exe .
+    go build -ldflags "-s -w" -o LagSleuth.exe .

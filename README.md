@@ -1,14 +1,16 @@
-# PingWatch
+# LagSleuth
 
 **A portable Windows network latency monitor that finds out *when* and *why* ping goes high.**
 
-PingWatch pings any number of hosts every second, learns what "normal" looks like for each one, and flags anything that strays from it. When several hosts go slow together it groups them into one incident, then pulls in the CPU, memory and disk counters and the Windows event logs from those servers, so you can see what was happening at that moment. It was built to track down latency spikes that hit a group of virtual machines at the top of every hour.
+LagSleuth pings any number of hosts every second, learns what "normal" looks like for each one, and flags anything that strays from it. When several hosts go slow together it groups them into one incident, then pulls in the CPU, memory and disk counters and the Windows event logs from those servers, so you can see what was happening at that moment. It was built to track down latency spikes that hit a group of virtual machines at the top of every hour.
 
 One exe. No install, no admin rights, no Python, no database, no internet connection needed. The web dashboard is built in.
 
-[**⬇ Download the latest release**](https://github.com/Metrognome321/PingWatch/releases/latest)
+<sub>Formerly called PingWatch. Upgrading from it? Just swap the exe: config and history carry over.</sub>
 
-![PingWatch dashboard: host cards with live CPU, disk and top processes, and the ping graph paused on an incident where six hosts stall at once](screenshots/dashboard.png)
+[**⬇ Download the latest release**](https://github.com/Metrognome321/LagSleuth/releases/latest)
+
+![LagSleuth dashboard: host cards with live CPU, disk and top processes, and the ping graph paused on an incident where six hosts stall at once](screenshots/dashboard.png)
 
 <sub>Screenshots use simulated, fictional hosts and data.</sub>
 
@@ -51,14 +53,14 @@ One exe. No install, no admin rights, no Python, no database, no internet connec
 - **Incidents across hosts**: slow spells on different hosts that start together become one row, showing which hosts were hit (worst first), which stayed normal, how long it lasted and how far apart the hosts went slow (*onset spread*).
 - **Time pattern**: folds every hour on top of each other to spot things like *"high ping recurs at :00 past the hour, seen in 22 of 25 hours"*, with a by-minute chart and an hour × minute heatmap.
 - **Response distribution**: pie chart and table of response times (exact ms or ranges).
-- **Monitor self-check**: warns if PingWatch itself was paused, so a hiccup on the monitoring machine is never mistaken for a network problem.
+- **Monitor self-check**: warns if LagSleuth itself was paused, so a hiccup on the monitoring machine is never mistaken for a network problem.
 
 ### Finding the cause
 - **Live server metrics, every second** (adjustable from 1 to 60 s on the dashboard): CPU, CPU queue, **CPU stolen** (VMware: time the host made the VM wait), memory available / committed / paging / ballooned, **disk read and write latency**, disk queue and IOPS. They're shown on the host cards and in collapsible graphs on the same timeline as the ping graph.
 - **Top processes**: the busiest applications on each server (CPU as a share of the machine, like Task Manager, plus memory), recorded every 5 seconds. You get a live "top:" line on each card, a CPU-per-process graph with a ranking table, and the busiest process during every incident.
 - **Per-incident metrics**: each incident shows every affected host's worst disk latency, CPU and stolen time.
 - **Show only some servers**: untick hosts on their cards (Ctrl+click = only that one) to filter the ping graph and every metric graph. Every graph has a clickable legend.
-- **Event logs around incidents**: after an incident, PingWatch reads the Windows event logs from the monitoring PC and every affected host, from 2 minutes before to 1 minute after. It collects errors and warnings plus events that often explain a stall: clock changes, VSS / snapshots / VMware Tools, scheduled tasks, Windows Update, Storport and Time-Service.
+- **Event logs around incidents**: after an incident, LagSleuth reads the Windows event logs from the monitoring PC and every affected host, from 2 minutes before to 1 minute after. It collects errors and warnings plus events that often explain a stall: clock changes, VSS / snapshots / VMware Tools, scheduled tasks, Windows Update, Storport and Time-Service.
 
 ### Reporting
 - **Printable report** for any period (preset or custom From / To): summary, ping graph, server metric graphs, incidents with per-host metrics and event-log counts, and a section per host.
@@ -69,43 +71,43 @@ One exe. No install, no admin rights, no Python, no database, no internet connec
 
 ## Quick start
 
-1. Download **PingWatch-x.y.z-windows.zip** from [Releases](https://github.com/Metrognome321/PingWatch/releases/latest) and unzip it anywhere.
-2. Double-click **`PingWatch.exe`**. The dashboard opens at **http://localhost:5055**.
+1. Download **LagSleuth-x.y.z-windows.zip** from [Releases](https://github.com/Metrognome321/LagSleuth/releases/latest) and unzip it anywhere.
+2. Double-click **`LagSleuth.exe`**. The dashboard opens at **http://localhost:5055**.
 3. Add hosts in the box at the top (paste a list separated by commas or spaces).
-4. Keep the console window open while monitoring. Closing it stops PingWatch.
+4. Keep the console window open while monitoring. Closing it stops LagSleuth.
 
 Leave it running for at least 4 hours before relying on the time-pattern findings.
 
 | Download | Use on |
 |---|---|
-| `PingWatch-64bit.exe` (`PingWatch.exe` in the zip) | 64-bit Windows 10/11 and Windows Server 2016+ (almost every machine) |
-| `PingWatch-32bit.exe` | 32-bit Windows 10 |
-| `PingWatch-ARM64.exe` | Windows on ARM (Snapdragon, Surface Pro X) |
+| `LagSleuth-64bit.exe` (`LagSleuth.exe` in the zip) | 64-bit Windows 10/11 and Windows Server 2016+ (almost every machine) |
+| `LagSleuth-32bit.exe` | 32-bit Windows 10 |
+| `LagSleuth-ARM64.exe` | Windows on ARM (Snapdragon, Surface Pro X) |
 
 The exes aren't code-signed, so SmartScreen warns on first run: click **More info → Run anyway**.
 
-**Upgrading:** close PingWatch, replace `PingWatch.exe`, start it again. Config, history and events carry over.
+**Upgrading:** close LagSleuth, replace `LagSleuth.exe`, start it again. Config, history and events carry over.
 
-**Start at logon:** put a shortcut to `PingWatch.exe -no-browser` in `shell:startup`.
+**Start at logon:** put a shortcut to `LagSleuth.exe -no-browser` in `shell:startup`.
 
 ---
 
 ## Reading metrics and event logs from other servers
 
-PingWatch reads remote servers **as the Windows account it runs as**, with no stored passwords. If you start it while logged in with your domain account, it uses your account. On each server you want data from:
+LagSleuth reads remote servers **as the Windows account it runs as**, with no stored passwords. If you start it while logged in with your domain account, it uses your account. On each server you want data from:
 
 | For | Needs on that server |
 |---|---|
 | **Server metrics** | The account in **Performance Monitor Users** (or an admin), the **Remote Registry** service running, the **File and Printer Sharing** firewall rule allowed |
 | **Event logs** | The account in **Event Log Readers** (or an admin), the **Remote Event Log Management** firewall rule allowed |
 
-Servers PingWatch can't read show **"no access"** with the reason, and are retried automatically. Public addresses (such as `8.8.8.8`) are never queried. If the servers are in a different domain that doesn't trust yours, use an account from that domain.
+Servers LagSleuth can't read show **"no access"** with the reason, and are retried automatically. Public addresses (such as `8.8.8.8`) are never queried. If the servers are in a different domain that doesn't trust yours, use an account from that domain.
 
 ---
 
 ## Configuration
 
-Settings live in `config.json` next to the exe (or in `%LOCALAPPDATA%\PingWatch` if that folder is read-only). Targets added or removed in the dashboard are saved automatically. Edit the file and restart PingWatch for other changes.
+Settings live in `config.json` next to the exe (or in `%LOCALAPPDATA%\LagSleuth` if that folder is read-only). Targets added or removed in the dashboard are saved automatically. Edit the file and restart LagSleuth for other changes.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -133,7 +135,7 @@ Settings live in `config.json` next to the exe (or in `%LOCALAPPDATA%\PingWatch`
 
 ## Building from source
 
-PingWatch is a single Go program using only the standard library (no external modules, no CGO). The dashboard and Chart.js are embedded into the exe.
+LagSleuth is a single Go program using only the standard library (no external modules, no CGO). The dashboard and Chart.js are embedded into the exe.
 
 Requires Go 1.22 or newer. From the `source` folder:
 
@@ -141,15 +143,15 @@ Requires Go 1.22 or newer. From the `source` folder:
 gofmt -l .        # must print nothing
 go vet .
 go test ./...
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o dist/PingWatch.exe .
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o dist/LagSleuth.exe .
 ```
 
 Use `GOARCH=386` and `GOARCH=arm64` for the 32-bit and ARM builds. On Windows PowerShell set the variables first, e.g. `$env:GOOS="windows"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"`.
 
-**Try it without a network:** set `PINGWATCH_SIMULATE=1` for simulated pings, metrics and event logs, including a stall shared by several hosts every 3 minutes:
+**Try it without a network:** set `LAGSLEUTH_SIMULATE=1` for simulated pings, metrics and event logs, including a stall shared by several hosts every 3 minutes:
 
 ```bash
-PINGWATCH_SIMULATE=1 go run . -no-browser -port 5077 -data /tmp/pwtest
+LAGSLEUTH_SIMULATE=1 go run . -no-browser -port 5077 -data /tmp/pwtest
 ```
 
 | File | Contents |

@@ -3,7 +3,7 @@ package main
 // Cross-host incidents and monitor self-check.
 //
 // An incident groups deviation events on different targets that start together, so "six hosts went
-// slow at 12:00:01" is one row instead of six. The stall watcher checks that PingWatch itself kept
+// slow at 12:00:01" is one row instead of six. The stall watcher checks that LagSleuth itself kept
 // running on time, so a pause of the monitoring machine is not mistaken for a network problem.
 
 import (
@@ -25,12 +25,12 @@ import (
 
 const (
 	stallTick      = 100 * time.Millisecond
-	stallThreshold = 250 * time.Millisecond // a wake-up this late means PingWatch itself was paused
+	stallThreshold = 250 * time.Millisecond // a wake-up this late means LagSleuth itself was paused
 )
 
 type Stall struct {
 	TS float64 `json:"ts"` // when the pause began
-	Ms float64 `json:"ms"` // how long PingWatch was late
+	Ms float64 `json:"ms"` // how long LagSleuth was late
 }
 
 var (
@@ -48,7 +48,7 @@ func loadStalls() {
 	}
 }
 
-// stallWatch wakes every 100 ms. If a wake-up is more than 250 ms late, the PingWatch process (or the
+// stallWatch wakes every 100 ms. If a wake-up is more than 250 ms late, the LagSleuth process (or the
 // whole machine it runs on) was paused, and pings sent around that time cannot be trusted.
 func stallWatch() {
 	last := time.Now()
@@ -159,9 +159,9 @@ type Incident struct {
 	Timeouts       int                `json:"timeouts"`
 	PeakMs         *float64           `json:"peak_ms"`
 	PeakTarget     string             `json:"peak_target"`
-	MonitorStallMs *float64           `json:"monitor_stall_ms"`        // PingWatch itself paused during this incident
+	MonitorStallMs *float64           `json:"monitor_stall_ms"`        // LagSleuth itself paused during this incident
 	Key            int64              `json:"key"`                     // stable id (start, whole seconds) for event logs
-	LocalMetrics   map[string]float64 `json:"local_metrics,omitempty"` // the PingWatch machine during the incident
+	LocalMetrics   map[string]float64 `json:"local_metrics,omitempty"` // the LagSleuth machine during the incident
 	LocalTopProcs  []ProcSummary      `json:"local_top_procs,omitempty"`
 	Logs           *LogSummary        `json:"logs,omitempty"`
 	lastStart      float64
@@ -422,7 +422,7 @@ func incidentRoutes(mux *http.ServeMux) {
 		minHosts, _ := strconv.Atoi(r.URL.Query().Get("min_hosts"))
 		incs := buildIncidents(start, end)
 		w.Header().Set("Content-Type", "text/csv")
-		w.Header().Set("Content-Disposition", "attachment; filename=pingwatch_incidents.csv")
+		w.Header().Set("Content-Disposition", "attachment; filename=lagsleuth_incidents.csv")
 		cw := csv.NewWriter(w)
 		cw.Write([]string{"start", "end", "duration_s", "hosts_affected", "hosts_monitored", "affected", "clean",
 			"worst_target", "peak_ms", "deviating_pings", "timeouts", "onset_spread_s", "monitor_stall_ms"})

@@ -11,7 +11,7 @@ import (
 )
 
 // Performance counters through pdh.dll (the API behind Performance Monitor and typeperf). Remote machines are
-// read as "\\host\Object(Instance)\Counter" with the Windows account PingWatch runs as; the remote machine
+// read as "\\host\Object(Instance)\Counter" with the Windows account LagSleuth runs as; the remote machine
 // needs the Remote Registry service and File and Printer Sharing allowed, and the account must be in
 // "Performance Monitor Users" (or an admin) there.
 

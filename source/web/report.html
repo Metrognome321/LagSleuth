@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>PingWatch report</title>
+<title>LagSleuth report</title>
 <script src="/static/chart.umd.min.js"></script>
 <style>
   body { font: 13px/1.45 "Segoe UI", system-ui, sans-serif; color: #0b0b0b; background: #f9f9f7; margin: 0; padding: 24px 32px; }
@@ -46,7 +46,7 @@
 </style>
 </head>
 <body>
-<h1>PingWatch latency report</h1>
+<h1>LagSleuth latency report</h1>
 <div class="meta" id="meta">Loading…</div>
 <div class="toolbar">
   <button class="primary" id="pdf" title="Opens the print dialog: choose &quot;Save as PDF&quot; (or &quot;Microsoft Print to PDF&quot;) as the printer">⬇ Export PDF</button>
@@ -151,9 +151,9 @@ fetch('/api/report?' + params).then(r => r.json()).then(async R => {
   const c = R.cfg;
   fromIn.value = localISO(R.start); toIn.value = localISO(R.end);
   document.getElementById('meta').innerHTML =
-    `Period: <b>${ts(R.start)}</b> to <b>${ts(R.end)}</b> (${dur(R.end - R.start)}) · generated ${ts(R.generated)} · PingWatch ${esc(R.version || '')}<br>` +
+    `Period: <b>${ts(R.start)}</b> to <b>${ts(R.end)}</b> (${dur(R.end - R.start)}) · generated ${ts(R.generated)} · LagSleuth ${esc(R.version || '')}<br>` +
     `Deviation rule: slower than ${c.deviation_factor}× normal and at least ${c.deviation_min_delta_ms} ms above it${c.high_ms ? `, or ≥ ${c.high_ms} ms` : ''}, or a timeout`;
-  document.title = `PingWatch report ${localISO(R.start).replace('T', ' ')} to ${localISO(R.end).replace('T', ' ')}`;
+  document.title = `LagSleuth report ${localISO(R.start).replace('T', ' ')} to ${localISO(R.end).replace('T', ' ')}`;
   const root = document.getElementById('sections');
   const targets = R.sections.map(s => s.summary.target);
   const colorOf = t => CAT[targets.indexOf(t) % CAT.length] || '#898781';
@@ -164,8 +164,8 @@ fetch('/api/report?' + params).then(r => r.json()).then(async R => {
   root.insertAdjacentHTML('beforeend', `<section><h2>Summary</h2>
     <div class="verdict" style="border-color:${icol}">${{ pattern: '▲', none: '✔', insufficient: '◌' }[IF.status]} ${esc(IF.text)}</div>
     <div class="verdict" style="border-color:${H.stall_count ? '#fab219' : '#0ca30c'}">${H.stall_count
-      ? `⚠ PingWatch itself was paused ${H.stall_count} time(s) in this period (worst ${ms(H.worst_ms)} ms). Pings at those moments may be slow because of the monitoring machine.`
-      : '✔ The monitoring machine kept to time for the whole period, so the slow pings below are not caused by PingWatch.'}</div>
+      ? `⚠ LagSleuth itself was paused ${H.stall_count} time(s) in this period (worst ${ms(H.worst_ms)} ms). Pings at those moments may be slow because of the monitoring machine.`
+      : '✔ The monitoring machine kept to time for the whole period, so the slow pings below are not caused by LagSleuth.'}</div>
     <div class="small">${I.multi_host.length} incident(s) affected more than one host at the same time · ${I.total} incident(s) in total · ${targets.length} target(s)</div></section>`);
 
   // ping graph over the period (worst ping per time slice, all targets)
@@ -200,7 +200,7 @@ fetch('/api/report?' + params).then(r => r.json()).then(async R => {
         blocks.push({ m, ds, id: 'met' + n });
       });
       root.insertAdjacentHTML('beforeend', `<section><h2>Server metrics over the period</h2>
-        <div class="small">Worst value per time slice from Windows performance counters. Dashed line = the PC running PingWatch.</div>
+        <div class="small">Worst value per time slice from Windows performance counters. Dashed line = the PC running LagSleuth.</div>
         ${legendHTML(hosts.map(h => [mlabel(h), mcolor(h), h === 'local']))}
         <div class="mgrid">${blocks.map(b => `<div><h3>${esc(b.m.title)} (${b.m.unit})</h3><div class="cbox small"><canvas id="${b.id}"></canvas></div></div>`).join('')}</div></section>`);
       blocks.forEach(b => timeChart(document.getElementById(b.id), b.ds, R, b.m.unit, b.m.max));

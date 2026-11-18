@@ -13,7 +13,7 @@ import (
 )
 
 // queryEvents reads one event log from this PC (host "") or a remote Windows host with wevtutil, which is
-// built into Windows. Remote reads use the Windows account PingWatch runs as: it needs to be in
+// built into Windows. Remote reads use the Windows account LagSleuth runs as: it needs to be in
 // "Event Log Readers" (or an admin) on the remote host, and the "Remote Event Log Management" firewall
 // rule must be allowed there.
 func queryEvents(host string, ch LogChannel, from, to float64, max int) ([]LogEvent, error) {

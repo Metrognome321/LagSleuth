@@ -8,3 +8,6 @@ dist/
 
 # Internal handover doc (mentions internal hosts)
 docs/
+
+# Traces
+*.etl

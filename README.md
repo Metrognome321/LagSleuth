@@ -10,9 +10,9 @@ One exe. No install, no admin rights, no Python, no database, no internet connec
 
 [**⬇ Download the latest release**](https://github.com/Metrognome321/LagSleuth/releases/latest)
 
-[![LagSleuth in 30 seconds: live ping graph, incidents across hosts, event logs, server metrics, top processes and the hourly time pattern](media/lagsleuth-preview.gif)](media/lagsleuth-promo.mp4)
+[![LagSleuth in 30 seconds: live ping graph, incidents across hosts, event logs, server metrics, top processes and the hourly time pattern](media/lagsleuth-preview.gif)](https://github.com/Metrognome321/LagSleuth/raw/main/media/lagsleuth-promo.mp4)
 
-▶ [**Watch the 30-second video**](media/lagsleuth-promo.mp4) (1080p, MP4)
+▶ [**Download the 30-second video**](https://github.com/Metrognome321/LagSleuth/raw/main/media/lagsleuth-promo.mp4) (1080p MP4, 12 MB)
 
 <sub>The video and screenshots use simulated, fictional hosts and data.</sub>
 

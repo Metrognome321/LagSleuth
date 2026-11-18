@@ -59,6 +59,83 @@ func pdhError(code uintptr) error {
 type pdhSource struct {
 	query    uintptr
 	counters []uintptr // 0 = this machine does not have that counter (e.g. no VMware Tools)
+	prefix   string
+	// per-process counters, in their own query because "\Process(*)" has hundreds of instances
+	pQuery, pCPU, pMem uintptr
+}
+
+var procPdhGetArray = pdh.NewProc("PdhGetFormattedCounterArrayW")
+
+// counterArray reads every instance of a wildcard counter as name -> value.
+func counterArray(h uintptr, format uint32) (map[string]float64, error) {
+	var size, count uint32
+	r, _, _ := procPdhGetArray.Call(h, uintptr(format), uintptr(unsafe.Pointer(&size)), uintptr(unsafe.Pointer(&count)), 0)
+	if r != 0x800007D2 { // PDH_MORE_DATA: tells us the buffer size
+		if r == 0 {
+			return map[string]float64{}, nil
+		}
+		return nil, pdhError(r)
+	}
+	buf := make([]byte, size)
+	if r, _, _ = procPdhGetArray.Call(h, uintptr(format), uintptr(unsafe.Pointer(&size)), uintptr(unsafe.Pointer(&count)), uintptr(unsafe.Pointer(&buf[0]))); r != 0 {
+		return nil, pdhError(r)
+	}
+	// PDH_FMT_COUNTERVALUE_ITEM_W: name pointer, then PDH_FMT_COUNTERVALUE (8-byte aligned) = 24 bytes on 32 and 64 bit
+	const item = 24
+	out := make(map[string]float64, count)
+	for i := uint32(0); i < count; i++ {
+		p := unsafe.Pointer(&buf[i*item])
+		name := utf16PtrToString(*(**uint16)(p))
+		status := *(*uint32)(unsafe.Add(p, 8))
+		if status > 1 {
+			continue
+		}
+		out[name] = *(*float64)(unsafe.Add(p, 16))
+	}
+	return out, nil
+}
+
+func utf16PtrToString(p *uint16) string {
+	if p == nil {
+		return ""
+	}
+	var s []uint16
+	for ptr := unsafe.Pointer(p); ; ptr = unsafe.Add(ptr, 2) {
+		c := *(*uint16)(ptr)
+		if c == 0 {
+			break
+		}
+		s = append(s, c)
+	}
+	return syscall.UTF16ToString(s)
+}
+
+func (s *pdhSource) processes() ([]ProcSample, error) {
+	if s.pQuery == 0 { // first call: set up the query; values appear from the next call (rates need 2 samples)
+		if r, _, _ := procPdhOpenQuery.Call(0, 0, uintptr(unsafe.Pointer(&s.pQuery))); r != 0 {
+			return nil, pdhError(r)
+		}
+		for _, c := range []struct {
+			path string
+			h    *uintptr
+		}{{`\Process(*)\% Processor Time`, &s.pCPU}, {`\Process(*)\Working Set - Private`, &s.pMem}} {
+			p, _ := syscall.UTF16PtrFromString(s.prefix + c.path)
+			if r, _, _ := procPdhAddEnglish.Call(s.pQuery, uintptr(unsafe.Pointer(p)), 0, uintptr(unsafe.Pointer(c.h))); r != 0 {
+				return nil, pdhError(r)
+			}
+		}
+		procPdhCollect.Call(s.pQuery)
+		return nil, nil
+	}
+	if r, _, _ := procPdhCollect.Call(s.pQuery); r != 0 {
+		return nil, pdhError(r)
+	}
+	cpu, err := counterArray(s.pCPU, pdhFmtDouble|pdhFmtNoCap100)
+	if err != nil {
+		return nil, err
+	}
+	mem, _ := counterArray(s.pMem, pdhFmtDouble)
+	return topProcesses(cpu, mem), nil
 }
 
 func openCounters(host string) (counterSource, error) {
@@ -73,7 +150,7 @@ func openCounters(host string) (counterSource, error) {
 			return nil, pdhError(r)
 		}
 	}
-	s := &pdhSource{counters: make([]uintptr, len(metricDefs))}
+	s := &pdhSource{counters: make([]uintptr, len(metricDefs)), prefix: prefix}
 	if r, _, _ := procPdhOpenQuery.Call(0, 0, uintptr(unsafe.Pointer(&s.query))); r != 0 {
 		return nil, pdhError(r)
 	}
@@ -140,5 +217,9 @@ func (s *pdhSource) close() {
 	if s.query != 0 {
 		procPdhCloseQuery.Call(s.query)
 		s.query = 0
+	}
+	if s.pQuery != 0 {
+		procPdhCloseQuery.Call(s.pQuery)
+		s.pQuery = 0
 	}
 }

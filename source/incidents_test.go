@@ -162,3 +162,30 @@ func TestMetricStoreSeriesAndPeaks(t *testing.T) {
 		t.Errorf("bucket should keep worst values: %v %v / %v", *pts[10].V[0], *pts[10].V[1], *pts[9].V[0])
 	}
 }
+
+func TestProcStoreAndSummary(t *testing.T) {
+	dataDir = t.TempDir()
+	cfg = defaultConfig()
+	now := time.Now()
+	base := float64(time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 0, 0, 0, time.Local).Add(-time.Hour).Unix())
+	for s := 0; s < 720; s++ { // one hour every 5 s
+		ts := base + float64(s*5)
+		ps := []ProcSample{{"sqlservr", 5, 3000}, {"svchost", 1, 50}}
+		if s >= 100 && s < 104 {
+			ps = []ProcSample{{"VSSVC", 40, 6}, {"sqlservr", 20, 3100}, {"svchost", 1, 50}}
+		}
+		storeProcs("h", ts, ps)
+	}
+	got, n := procSummary("h", base+490, base+530)
+	if n != 9 || got[0].Name != "VSSVC" || got[0].MaxCPU != 40 || got[1].Name != "sqlservr" || got[1].MaxCPU != 20 || got[1].MaxMem != 3100 {
+		t.Fatalf("summary wrong (n=%d): %+v", n, got)
+	}
+	all, n := procSummary("h", base, base+3600)
+	if n != 720 || all[0].Name != "VSSVC" || all[0].Seen != 4 {
+		t.Fatalf("full-hour summary wrong (n=%d): %+v", n, all[:2])
+	}
+	tp := topProcesses(map[string]float64{"_Total": 400, "Idle": 300, "a": 80, "b": 20}, map[string]float64{"a": 1048576 * 10})
+	if len(tp) != 2 || tp[0].Name != "a" || tp[0].CPU != 20 || tp[0].MemMB != 10 || tp[1].CPU != 5 {
+		t.Fatalf("topProcesses wrong: %+v", tp)
+	}
+}

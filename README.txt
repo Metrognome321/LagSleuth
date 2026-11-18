@@ -1,4 +1,4 @@
-PingWatch 1.5 - multi-host ping monitor
+PingWatch 1.6 - multi-host ping monitor
 =======================================
 
 Runs on any Windows 10 / 11 or Windows Server 2016+ machine.
@@ -108,6 +108,26 @@ SERVER METRICS (CPU, MEMORY, DISK)
     host per day at 1-second sampling.
   Every panel below the targets can be collapsed with the arrow by its title.
 
+SHOWING ONLY SOME SERVERS
+  Each host card has a tick box. Untick a host to hide it from the ping graph
+  (All targets), the server metric graphs and their legends. Ctrl+click a tick
+  box to show only that host; "show all hosts" in the Server metrics panel
+  brings them all back. Clicking a host in any legend does the same as in the
+  ping graph legend. Your choice is remembered in the browser.
+
+TOP PROCESSES (WHAT IS USING THE CPU)
+  Every 5 seconds (process_interval_seconds) PingWatch also records the 10
+  busiest processes on each machine, with CPU as a share of the whole machine
+  (like Task Manager) and private memory.
+  - Host cards show the busiest processes right now ("top: sqlservr 22%").
+  - The Top processes panel shows, for the machine picked at the top right
+    (default: the selected card), a CPU graph of the busiest processes over
+    the ping graph's time window, and a table: peak CPU, average CPU, peak
+    memory and how often it was among the 10 busiest.
+  - Each incident shows the busiest process during it, and the event log
+    panel and the report list the top 3 per host.
+  Uses the same access as the server metrics. Kept as long as the metrics.
+
 REPORT AND PDF
   Report opens a printable page for the stats window (or, if the graph is
   paused, exactly the period shown on the graph). Pick a period or a custom
@@ -169,7 +189,8 @@ config.json SETTINGS (edit, then restart PingWatch)
   event_logs               true   collect Windows event logs around incidents
   metrics                  true   read CPU / memory / disk counters from the hosts
   metrics_interval_seconds 1      how often (also changeable on the dashboard)
-  metrics_retention_days   7      older metric files are deleted
+  metrics_retention_days   7      older metric and process files are deleted
+  process_interval_seconds 5      how often the busiest processes are recorded
   host / port              0.0.0.0 / 5055
   open_browser             true
 

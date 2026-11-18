@@ -29,7 +29,7 @@ import (
 //go:embed web
 var webFS embed.FS
 
-var version = "1.5.0"
+var version = "1.6.0"
 
 // ---------------------------------------------------------------------------- config
 
@@ -50,6 +50,7 @@ type Config struct {
 	Metrics                bool     `json:"metrics"`
 	MetricsIntervalSeconds float64  `json:"metrics_interval_seconds"`
 	MetricsRetentionDays   int      `json:"metrics_retention_days"`
+	ProcessIntervalSeconds float64  `json:"process_interval_seconds"`
 	Host                   string   `json:"host"`
 	Port                   int      `json:"port"`
 	OpenBrowser            bool     `json:"open_browser"`
@@ -62,7 +63,7 @@ func defaultConfig() Config {
 		HighMs: 0, EventCloseAfter: 5, RetentionDays: 30,
 		RangeBucketsMs:  []int{1, 2, 5, 10, 20, 50, 100, 250, 500},
 		IncidentWindowS: 10, EventLogs: true,
-		Metrics: true, MetricsIntervalSeconds: 1, MetricsRetentionDays: 7,
+		Metrics: true, MetricsIntervalSeconds: 1, MetricsRetentionDays: 7, ProcessIntervalSeconds: 5,
 		Host: "0.0.0.0", Port: 5055, OpenBrowser: true,
 	}
 }
@@ -340,6 +341,11 @@ func newMonitor(t string) *Monitor {
 		m.base = m.base[len(m.base)-cfg.BaselineWindow:]
 	}
 	m.updateBaseline()
+	if simulate && m.baseline != nil { // continue the simulation from the stored history's normal
+		simMu.Lock()
+		simBase[t] = *m.baseline
+		simMu.Unlock()
+	}
 	return m
 }
 
@@ -537,6 +543,15 @@ var simState = map[string]*struct {
 	base  float64
 }{}
 
+var simBase = map[string]float64{}
+
+// simSharedStall: every 3 minutes simulated hosts stall together for ~15 s, as if they share one
+// virtualisation host. Public addresses, gateways (.1) and the demo host 10.0.0.6 play "off-host"
+// targets and stay clean.
+func simSharedStall(t string) bool {
+	return time.Now().Unix()%180 < 15 && logEligible(t) && !strings.HasSuffix(t, ".1") && t != "10.0.0.6"
+}
+
 func simulated(t string) float64 {
 	simMu.Lock()
 	defer simMu.Unlock()
@@ -546,11 +561,12 @@ func simulated(t string) float64 {
 			spike int
 			base  float64
 		}{0, []float64{3, 8, 20}[rand.Intn(3)]}
+		if b, ok := simBase[t]; ok {
+			st.base = b
+		}
 		simState[t] = st
 	}
-	// shared stall: every 3 minutes the 3 ms and 8 ms hosts stall together for ~15 s, as if they share
-	// one virtualisation host; 20 ms hosts play "off-host" targets and stay clean
-	if time.Now().Unix()%180 < 15 && st.base < 20 && rand.Float64() < 0.7 {
+	if simSharedStall(t) && st.base < 20 && rand.Float64() < 0.7 {
 		return st.base*20 + rand.Float64()*300
 	}
 	if st.spike > 0 {
@@ -1233,6 +1249,7 @@ func routes() *http.ServeMux {
 	incidentRoutes(mux)
 	eventLogRoutes(mux)
 	metricRoutes(mux)
+	processRoutes(mux)
 
 	mux.HandleFunc("POST /api/targets", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {

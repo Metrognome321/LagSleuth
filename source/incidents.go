@@ -141,6 +141,7 @@ type IncidentHost struct {
 	AvgMs      *float64           `json:"avg_ms"`
 	BaselineMs *float64           `json:"baseline_ms"`
 	Metrics    map[string]float64 `json:"metrics,omitempty"` // worst CPU / memory / disk values during the incident
+	TopProcs   []ProcSummary      `json:"top_procs,omitempty"`
 	sumMs      float64
 	okN        int
 }
@@ -161,6 +162,7 @@ type Incident struct {
 	MonitorStallMs *float64           `json:"monitor_stall_ms"`        // PingWatch itself paused during this incident
 	Key            int64              `json:"key"`                     // stable id (start, whole seconds) for event logs
 	LocalMetrics   map[string]float64 `json:"local_metrics,omitempty"` // the PingWatch machine during the incident
+	LocalTopProcs  []ProcSummary      `json:"local_top_procs,omitempty"`
 	Logs           *LogSummary        `json:"logs,omitempty"`
 	lastStart      float64
 }
@@ -224,10 +226,12 @@ func buildIncidents(start, end float64) []Incident {
 		inc.DurationS = inc.EndTS - inc.StartTS
 		hit := map[string]bool{}
 		inc.LocalMetrics = metricPeaks(metricLocal, inc.StartTS-1, inc.EndTS+1)
+		inc.LocalTopProcs = topProcsDuring(metricLocal, inc.StartTS-1, inc.EndTS+1)
 		for j := range inc.Hosts {
 			h := &inc.Hosts[j]
 			hit[h.Target] = true
 			h.Metrics = metricPeaks(h.Target, h.StartTS-1, h.EndTS+1)
+			h.TopProcs = topProcsDuring(h.Target, h.StartTS-1, h.EndTS+1)
 			if h.okN > 0 {
 				h.AvgMs = fptr(h.sumMs / float64(h.okN))
 			}

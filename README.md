@@ -27,7 +27,9 @@ One exe. No install, no admin rights, no Python, no database, no internet connec
 
 ### Finding the cause
 - **Live server metrics, every second** (adjustable from 1 to 60 s on the dashboard): CPU, CPU queue, **CPU stolen** (VMware: time the host made the VM wait), memory available / committed / paging / ballooned, **disk read and write latency**, disk queue and IOPS. They're shown on the host cards and in collapsible graphs on the same timeline as the ping graph.
+- **Top processes**: the busiest applications on each server (CPU as a share of the machine, like Task Manager, plus memory), recorded every 5 seconds. You get a live "top:" line on each card, a CPU-per-process graph with a ranking table, and the busiest process during every incident.
 - **Per-incident metrics**: each incident shows every affected host's worst disk latency, CPU and stolen time.
+- **Show only some servers**: untick hosts on their cards (Ctrl+click = only that one) to filter the ping graph and every metric graph. Every graph has a clickable legend.
 - **Event logs around incidents**: after an incident, PingWatch reads the Windows event logs from the monitoring PC and every affected host, from 2 minutes before to 1 minute after. It collects errors and warnings plus events that often explain a stall: clock changes, VSS / snapshots / VMware Tools, scheduled tasks, Windows Update, Storport and Time-Service.
 
 ### Reporting
@@ -91,7 +93,8 @@ Settings live in `config.json` next to the exe (or in `%LOCALAPPDATA%\PingWatch`
 | `event_logs` | `true` | Collect Windows event logs around incidents |
 | `metrics` | `true` | Read CPU / memory / disk counters from the hosts |
 | `metrics_interval_seconds` | `1` | How often to read them (also changeable on the dashboard) |
-| `metrics_retention_days` | `7` | Metric history kept (about 4.5 MB per host per day at 1 s) |
+| `metrics_retention_days` | `7` | Metric and process history kept (about 4.5 MB + 3 MB per host per day) |
+| `process_interval_seconds` | `5` | How often the busiest processes are recorded |
 | `retention_days` | `30` | Ping history and events kept |
 | `host` / `port` | `0.0.0.0` / `5055` | Web listener (`127.0.0.1` = this PC only) |
 | `open_browser` | `true` | Open the dashboard on start |
@@ -126,6 +129,7 @@ PINGWATCH_SIMULATE=1 go run . -no-browser -port 5077 -data /tmp/pwtest
 | `main.go` | Config, storage, ping monitors, deviation detection, stats, time pattern, HTTP API |
 | `incidents.go` | Cross-host incidents, incident time pattern, monitor self-check |
 | `metrics.go`, `metrics_windows.go` | Performance counters (pdh.dll), storage, API |
+| `processes.go` | Top processes per machine: sampling, history, API |
 | `eventlog.go`, `eventlog_windows.go` | Event log collection (wevtutil) and API |
 | `ping_windows.go` | Native ICMP via iphlpapi.dll `IcmpSendEcho` |
 | `*_other.go` | Non-Windows fallbacks (testing only) |

@@ -177,14 +177,17 @@ func metricsHousekeeping() {
 			days = 7
 		}
 		cutoff := time.Now().AddDate(0, 0, -days-1)
-		root := filepath.Join(dataDir, "metrics")
-		dirs, _ := os.ReadDir(root)
-		for _, d := range dirs {
-			files, _ := os.ReadDir(filepath.Join(root, d.Name()))
-			for _, f := range files {
-				day, err := time.ParseInLocation("2006-01-02", strings.TrimSuffix(f.Name(), ".bin"), time.Local)
-				if err == nil && day.Before(cutoff) {
-					os.Remove(filepath.Join(root, d.Name(), f.Name()))
+		for _, sub := range []string{"metrics", "processes"} {
+			root := filepath.Join(dataDir, sub)
+			dirs, _ := os.ReadDir(root)
+			for _, d := range dirs {
+				files, _ := os.ReadDir(filepath.Join(root, d.Name()))
+				for _, f := range files {
+					name := strings.TrimSuffix(strings.TrimSuffix(f.Name(), ".bin"), ".jsonl")
+					day, err := time.ParseInLocation("2006-01-02", name, time.Local)
+					if err == nil && day.Before(cutoff) {
+						os.Remove(filepath.Join(root, d.Name(), f.Name()))
+					}
 				}
 			}
 		}
@@ -195,13 +198,14 @@ func metricsHousekeeping() {
 // ---------------------------------------------------------------------------- collectors
 
 type metricLive struct {
-	Host   string    `json:"host"`
-	Label  string    `json:"label"`
-	Status string    `json:"status"` // ok | connecting | no_access | error | skipped
-	Error  string    `json:"error,omitempty"`
-	TS     float64   `json:"ts"`
-	Values []float64 `json:"-"`
-	Avail  []string  `json:"available"` // metric keys this host provides
+	Host   string       `json:"host"`
+	Label  string       `json:"label"`
+	Status string       `json:"status"` // ok | connecting | no_access | error | skipped
+	Error  string       `json:"error,omitempty"`
+	TS     float64      `json:"ts"`
+	Values []float64    `json:"-"`
+	Avail  []string     `json:"available"` // metric keys this host provides
+	Procs  []ProcSample `json:"-"`         // busiest processes at the last process sample
 }
 
 type metricCollector struct {
@@ -234,6 +238,9 @@ func metricsInterval() time.Duration {
 
 func metricLabel(host string) string {
 	if host == metricLocal {
+		if simulate {
+			return "This PC (DEMO-PC)" // simulation never shows the real computer name (demos, screenshots)
+		}
 		if n, err := os.Hostname(); err == nil {
 			return "This PC (" + n + ")"
 		}
@@ -299,6 +306,7 @@ func (c *metricCollector) run() {
 		c.set(func(l *metricLive) { l.Status, l.Error, l.Avail = "ok", "", src.available() })
 		failures := 0
 		next := time.Now()
+		var nextProc time.Time
 		for {
 			next = next.Add(metricsInterval())
 			if d := time.Until(next); d > 0 {
@@ -326,6 +334,13 @@ func (c *metricCollector) run() {
 			failures = 0
 			mstore.append(c.host, ts, vals)
 			c.set(func(l *metricLive) { l.TS, l.Values, l.Error, l.Status = ts, vals, "", "ok" })
+			if time.Now().After(nextProc) { // top processes, less often: "\Process(*)" has hundreds of instances
+				nextProc = time.Now().Add(procInterval())
+				if ps, err := src.processes(); err == nil && ps != nil {
+					storeProcs(c.host, ts, ps)
+					c.set(func(l *metricLive) { l.Procs = ps })
+				}
+			}
 		}
 	}
 }
@@ -333,6 +348,7 @@ func (c *metricCollector) run() {
 // counterSource is a connected set of counters for one machine (PDH on Windows, simulated otherwise).
 type counterSource interface {
 	collect() ([]float64, error)
+	processes() ([]ProcSample, error) // busiest processes right now (nil on the first call)
 	available() []string
 	close()
 }
@@ -350,7 +366,7 @@ func (s *simSource) available() []string {
 }
 func (s *simSource) close() {}
 func (s *simSource) collect() ([]float64, error) {
-	stall := time.Now().Unix()%180 < 15 && s.host != "10.0.0.6"
+	stall := s.host != metricLocal && simSharedStall(s.host)
 	j := func(base, spread float64) float64 { return math.Max(0, base+(rand.Float64()-0.5)*spread) }
 	v := []float64{j(12, 10), j(1, 2), 0, j(1900, 50), j(45, 2), j(5, 8), 0, j(0.6, 0.4), j(0.8, 0.5), j(0.2, 0.4), j(80, 60)}
 	if stall {
@@ -466,8 +482,12 @@ func liveMetrics() map[string]any {
 			}
 		}
 		c.mu.Unlock()
+		procs := l.Procs
+		if len(procs) > 5 {
+			procs = procs[:5]
+		}
 		hosts[c.host] = map[string]any{"host": l.Host, "label": l.Label, "status": l.Status, "error": l.Error, "ts": l.TS,
-			"values": vals, "available": l.Avail}
+			"values": vals, "available": l.Avail, "procs": procs}
 	}
 	return hosts
 }

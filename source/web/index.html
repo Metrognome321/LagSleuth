@@ -113,6 +113,12 @@
   .chip.removed { color: var(--muted); text-decoration: line-through; }
   .tag { font-size: 11px; color: var(--muted); margin-left: 6px; }
   .incs { max-height: 420px; overflow: auto; }
+  .glegend { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 6px; margin-top: 8px; }
+  .glegend .li { display: inline-flex; align-items: center; gap: 6px; background: none; border: 1px solid transparent; border-radius: 6px; padding: 3px 8px; color: var(--text-2); font: 12px var(--mono); cursor: pointer; }
+  .glegend .li:hover { border-color: var(--axis); color: var(--text); background: var(--surface-2); }
+  .glegend .li.off { opacity: .4; text-decoration: line-through; }
+  .glegend .ln { width: 16px; height: 3px; border-radius: 2px; }
+  .glegend .lx { font-size: 12px; font-weight: 700; }
   td.wrap { white-space: normal; min-width: 220px; }
   @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
 </style>
@@ -170,7 +176,8 @@
       <button class="btn" id="saveBtn">⬇ Save PNG</button>
     </div>
     <div class="chartbox" id="graphBox"><canvas id="graph"></canvas></div>
-    <div class="hint" style="margin-top:6px">Drag the graph to scroll back through history · mouse wheel to zoom · Space to pause · ← → to step · click a deviation or heatmap cell to jump to it</div>
+    <div class="glegend" id="legend"></div>
+    <div class="hint" style="margin-top:6px">Drag the graph to scroll back through history · mouse wheel to zoom · Space to pause · ← → to step · click a deviation or heatmap cell to jump to it · click a host in the legend to show only it (click again for all) · Ctrl+click to add or remove one</div>
     <div class="log" id="log"></div>
   </section>
 
@@ -257,7 +264,26 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
 const q = () => `minutes=${state.minutes}`;
 
 /* ---------------- ping graph (live + history) ---------------- */
-const view = { live: true, span: 120, end: null, data: null, reqId: 0, lastLoad: 0, liveData: {} };
+const view = { live: true, span: 120, end: null, data: null, reqId: 0, lastLoad: 0, liveData: {}, hidden: new Set() };
+// series hidden from the graph (by legend label), remembered per browser
+try { JSON.parse(localStorage.getItem('pw.hidden') || '[]').forEach(l => view.hidden.add(l)); } catch {}
+const saveHidden = () => { try { localStorage.setItem('pw.hidden', JSON.stringify([...view.hidden])); } catch {} };
+
+// Grafana-style legend: click a host to show only that host (click it again to show all again);
+// Ctrl/Shift+click adds or removes one host. Other series (Timeout, Normal…) simply toggle.
+function legendClick(e, label) {
+  const D = view.data; if (!D) return;
+  const hosts = D.res.length > 1 ? D.res.map(r => r.target) : [];
+  if (!hosts.includes(label) || e.ctrlKey || e.metaKey || e.shiftKey) {
+    view.hidden.has(label) ? view.hidden.delete(label) : view.hidden.add(label);
+  } else {
+    const shown = hosts.filter(h => !view.hidden.has(h));
+    if (shown.length === 1 && shown[0] === label) hosts.forEach(h => view.hidden.delete(h));
+    else hosts.forEach(h => h === label ? view.hidden.delete(h) : view.hidden.add(h));
+  }
+  saveHidden();
+  renderGraph();
+}
 const STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400, 172800];
 const tzOff = new Date().getTimezoneOffset() * 60;   // seconds, so ticks land on local clock boundaries
 
@@ -288,7 +314,7 @@ const graph = new Chart(document.getElementById('graph'), {
       y: { beginAtZero: true, grid: { color: C.grid }, border: { color: C.axis }, ticks: { color: C.muted }, title: { display: true, text: 'ms', color: C.muted } },
     },
     plugins: {
-      legend: { position: 'bottom', labels: { boxWidth: 14, boxHeight: 2, color: C.text2, filter: i => !i.text.startsWith('_') } },
+      legend: { display: false },   // HTML legend below the graph (#legend), so clicks never depend on canvas events
       tooltip: { filter: i => !i.dataset.label.startsWith('_') && i.dataset.label !== 'Normal' && i.dataset.label !== 'Deviation threshold',
         callbacks: {
           title: it => it.length ? fullTime(it[0].parsed.x) : '',
@@ -335,6 +361,7 @@ function renderGraph() {
   D.res.forEach(r => {
     const single = D.res.length === 1;
     const col = single ? C.series : colorFor(r.target);
+    const off = !single && view.hidden.has(r.target);   // hidden from the legend: keep it out of the scale and timeouts too
     if (r.bucket_s > 0) {
       const pts = []; let prevB = null;
       r.points.filter(p => p.max != null).forEach(p => {
@@ -342,19 +369,20 @@ function renderGraph() {
         pts.push({ x: p.ts + r.bucket_s / 2, y: p.max, max: p.max, avg: p.avg, n: p.n, dev: p.dev, to: p.to });
         prevB = p.ts;
       });
-      pts.forEach(p => ymax = Math.max(ymax, p.y));
+      if (!off) pts.forEach(p => ymax = Math.max(ymax, p.y));
       ds.push({ label: single ? `Worst per ${perLabel}` : r.target, data: pts, borderColor: col, backgroundColor: col, borderWidth: 2, tension: 0, spanGaps: false,
         pointRadius: ctx => ctx.raw && ctx.raw.dev ? 3 : 0, pointBackgroundColor: C.serious, pointBorderColor: C.surface, pointBorderWidth: 1.5 });
       if (single) ds.push({ label: `Average per ${perLabel}`, data: r.points.filter(p => p.avg != null).map(p => ({ x: p.ts + r.bucket_s / 2, y: p.avg, max: p.max, avg: p.avg, n: p.n, dev: p.dev, to: p.to })),
         borderColor: '#86b6ef', borderWidth: 1, pointRadius: 0, tension: 0 });
-      r.points.filter(p => p.to > 0).forEach(p => timeouts.push({ x: p.ts + r.bucket_s / 2, to: p.to, t: r.target }));
+      if (!off) r.points.filter(p => p.to > 0).forEach(p => timeouts.push({ x: p.ts + r.bucket_s / 2, to: p.to, t: r.target }));
     } else {
       // break the line across gaps (timeouts / app not running) so it never draws a fake straight segment
       const pts = []; let prev = null;
       r.points.forEach(p => {
         if (prev && p.ts - prev > 5) pts.push({ x: prev + 1, y: null });
         pts.push({ x: p.ts, y: p.rtt, dev: p.dev });
-        if (p.rtt == null) timeouts.push({ x: p.ts, to: 1, t: r.target });
+        if (off) { /* hidden series: not in the scale or timeout marks */ }
+        else if (p.rtt == null) timeouts.push({ x: p.ts, to: 1, t: r.target });
         else ymax = Math.max(ymax, p.rtt);
         prev = p.ts;
       });
@@ -380,6 +408,20 @@ function renderGraph() {
     pointStyle: 'crossRot', pointRadius: 6, borderColor: C.critical, borderWidth: 2, _t: D.res.length === 1 ? '' : '' });
   else ds.push({ label: 'Timeout', type: 'scatter', data: [], pointStyle: 'crossRot', borderColor: C.critical, borderWidth: 2 });
 
+  ds.forEach(d => { d.hidden = view.hidden.has(d.label); });
+  const hostSet = D.res.length > 1 ? new Set(D.res.map(r => r.target)) : new Set();
+  const shownHosts = [...hostSet].filter(h => !view.hidden.has(h)).length;
+  const legendHTML = ds.filter(d => !d.label.startsWith('_')).map(d => {
+    const col = d.borderColor, dash = d.borderDash ? `repeating-linear-gradient(90deg,${col} 0 4px,transparent 4px 7px)` : col;
+    const mark = d.type === 'scatter' ? `<span class="lx" style="color:${col}">✕</span>` : `<span class="ln" style="background:${dash}"></span>`;
+    const tip = hostSet.has(d.label)
+      ? (shownHosts === 1 && !d.hidden ? 'Click to show all hosts again' : 'Click to show only this host') + ' · Ctrl+click to add/remove it'
+      : 'Click to show or hide';
+    return `<button type="button" class="li${d.hidden ? ' off' : ''}" data-l="${esc(d.label)}" title="${tip}">${mark}${esc(d.label)}</button>`;
+  }).join('');
+  // only touch the DOM when the legend changes, so a click is never lost to the 1-second live refresh
+  const legendEl = document.getElementById('legend');
+  if (legendEl._html !== legendHTML) { legendEl.innerHTML = legendHTML; legendEl._html = legendHTML; }
   graph.data.datasets = ds;
   graph.options.scales.x.min = D.start;
   graph.options.scales.x.max = D.end;
@@ -400,7 +442,8 @@ function renderGraph() {
   document.getElementById('fwdBtn').disabled = view.live;
 
   // log: the pings at the end of the visible window
-  const rows = D.res.flatMap(r => r.log.map(x => ({ ...x, t: r.target }))).sort((a, b) => b.ts - a.ts).slice(0, 150);
+  const rows = D.res.filter(r => D.res.length === 1 || !view.hidden.has(r.target))
+    .flatMap(r => r.log.map(x => ({ ...x, t: r.target }))).sort((a, b) => b.ts - a.ts).slice(0, 150);
   document.getElementById('log').innerHTML = rows.map(x => {
     const cls = x.rtt == null ? 'to' : x.dev ? 'dev' : '';
     const msg = x.rtt == null ? `Request to ${esc(x.t)} timed out` : `Reply from ${esc(x.t)}: time=${fmt(x.rtt)}ms${x.dev ? '   ▲ deviation' : ''}`;
@@ -436,6 +479,9 @@ function step(dir) {
   freeze(end); loadGraph();
 }
 
+document.getElementById('legend').addEventListener('click', e => {
+  const b = e.target.closest('.li'); if (b) legendClick(e, b.dataset.l);
+});
 document.getElementById('pauseBtn').onclick = () => { freeze(); renderGraph(); };
 document.getElementById('liveBtn').onclick = goLive;
 document.getElementById('backBtn').onclick = () => step(-1);
@@ -503,18 +549,30 @@ document.addEventListener('keydown', e => {
 
 // copy / save the graph as an image (with a title strip so it stands alone in an email)
 function graphImage() {
-  const src = graph.canvas, dpr = window.devicePixelRatio || 1, head = 44 * dpr;
+  const src = graph.canvas, dpr = window.devicePixelRatio || 1, head = 44 * dpr, foot = 28 * dpr;
   const c = document.createElement('canvas');
-  c.width = src.width; c.height = src.height + head;
+  c.width = src.width; c.height = src.height + head + foot;
   const g = c.getContext('2d');
   g.fillStyle = C.surface; g.fillRect(0, 0, c.width, c.height);
   g.fillStyle = C.text; g.font = `600 ${15 * dpr}px "Segoe UI", system-ui, sans-serif`; g.textBaseline = 'middle';
   const D = view.data;
-  const tgt = D.res.length === 1 ? D.res[0].target : D.res.map(r => r.target).join(', ');
+  const tgt = D.res.length === 1 ? D.res[0].target : D.res.map(r => r.target).filter(t => !view.hidden.has(t)).join(', ');
   g.fillText(`PingWatch · ${tgt}`, 12 * dpr, 16 * dpr);
   g.fillStyle = C.text2; g.font = `${12 * dpr}px "Segoe UI", system-ui, sans-serif`;
   g.fillText(`${fullTime(D.start)} → ${fullTime(D.end)}`, 12 * dpr, 34 * dpr);
   g.drawImage(src, 0, head);
+  // legend for the visible series (the on-screen legend is HTML, so draw it into the image)
+  const items = graph.data.datasets.filter(d => !d.hidden && !d.label.startsWith('_'));
+  g.font = `${12 * dpr}px ui-monospace, Consolas, monospace`;
+  const widths = items.map(d => 22 * dpr + g.measureText(d.label).width + 14 * dpr);
+  let x = Math.max(12 * dpr, (c.width - widths.reduce((a, b) => a + b, 0)) / 2);
+  const y = src.height + head + foot / 2;
+  items.forEach((d, i) => {
+    g.fillStyle = d.borderColor;
+    if (d.type === 'scatter') g.fillText('✕', x, y); else g.fillRect(x, y - 1.5 * dpr, 16 * dpr, 3 * dpr);
+    g.fillStyle = C.text2; g.fillText(d.label, x + 22 * dpr, y);
+    x += widths[i];
+  });
   return c;
 }
 function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 2200); }

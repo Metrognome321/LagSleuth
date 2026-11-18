@@ -46,6 +46,9 @@ PING GRAPH: PAUSE AND HISTORY
   - Use the dropdown for a set width (2 min to 7 days), and the arrows / arrow
     keys to step back and forward.
   - Type a date and time and press Go to jump straight to that moment.
+  - With "All targets", click a host in the legend under the graph to show
+    only that host; click it again to show all hosts. Ctrl+click (or
+    Shift+click) adds or removes a single host. Your choice is remembered.
   - Click any row in "Deviations from normal", or any heatmap cell, to jump
     the graph to that event, ping by ping.
   - Long periods show each point as the worst ping in that slice of time,

@@ -122,7 +122,7 @@ func TestParseEvents(t *testing.T) {
 	if q := logQuery(logChannels[0], 0, 1); !strings.Contains(q, "@SystemTime>='1970-01-01T00:00:00.000Z'") {
 		t.Errorf("query: %s", q)
 	}
-	if logEligible("8.8.8.8") || !logEligible("172.17.220.98") || !logEligible("fileserver01") {
+	if logEligible("8.8.8.8") || !logEligible("10.20.30.40") || !logEligible("fileserver01") {
 		t.Error("logEligible wrong")
 	}
 }

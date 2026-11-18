@@ -1,0 +1,6 @@
+* text=auto
+README.txt text eol=crlf
+*.go text eol=lf
+*.exe binary
+*.pdf binary
+source/web/static/chart.umd.min.js -diff linguist-vendored

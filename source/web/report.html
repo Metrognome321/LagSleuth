@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PingWatch report</title>
+<script src="/static/chart.umd.min.js"></script>
+<style>
+  body { font: 13px/1.45 "Segoe UI", system-ui, sans-serif; color: #0b0b0b; background: #f9f9f7; margin: 0; padding: 24px 32px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .meta { color: #52514e; margin-bottom: 18px; }
+  .toolbar { margin-bottom: 18px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .toolbar a, .toolbar button, .toolbar select { font: inherit; padding: 5px 10px; border: 1px solid #c3c2b7; border-radius: 6px; background: #fcfcfb; color: #0b0b0b; text-decoration: none; cursor: pointer; }
+  section { background: #fcfcfb; border: 1px solid #e1e0d9; border-radius: 10px; padding: 16px 20px; margin-bottom: 18px; page-break-inside: avoid; }
+  h2 { font-size: 16px; margin: 0 0 12px; font-family: ui-monospace, Consolas, monospace; }
+  h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #52514e; margin: 16px 0 6px; }
+  .grid { display: grid; grid-template-columns: 260px 1fr; gap: 24px; align-items: start; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; }
+  .stat { background: #f0efec; border-radius: 6px; padding: 6px 10px; }
+  .stat .k { color: #52514e; font-size: 11px; } .stat .v { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e1e0d9; }
+  th { color: #52514e; font-weight: 500; font-size: 11px; }
+  .n { text-align: right; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .none { color: #898781; }
+  .verdict { padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; border-left: 4px solid; background: #f0efec; }
+  @media print { body { background: #fff; padding: 0; } .toolbar { display: none; } section { border-color: #ccc; } }
+</style>
+</head>
+<body>
+<h1>PingWatch latency report</h1>
+<div class="meta" id="meta">Loading…</div>
+<div class="toolbar">
+  <button onclick="window.print()">Print / Save as PDF</button>
+  <select id="period">
+    <option value="60">Last hour</option><option value="360">Last 6 hours</option><option value="1440">Last 24 hours</option>
+    <option value="10080">Last 7 days</option><option value="43200">Last 30 days</option>
+  </select>
+  <select id="mode"><option value="ranges">Ranges</option><option value="exact">Exact ms</option></select>
+  <a id="csv">Deviations CSV</a>
+  <a id="raw">Raw samples CSV</a>
+</div>
+<div id="sections"></div>
+
+<script>
+const params = new URLSearchParams(location.search);
+if (!params.get('minutes') && !params.get('from')) params.set('minutes', '1440');
+if (!params.get('mode')) params.set('mode', 'ranges');
+const RAMP = ['#86b6ef','#6da7ec','#5598e7','#3987e5','#2a78d6','#256abf','#1c5cab','#184f95','#104281','#0d366b'];
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ms = v => v == null ? '–' : (v < 10 ? v.toFixed(1) : Math.round(v).toString());
+const ts = t => { const d = new Date(t * 1000); return d.toLocaleDateString() + ' ' + d.toLocaleTimeString(); };
+const dur = s => s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.floor(s/60)}m ${Math.round(s%60)}s` : `${Math.floor(s/3600)}h ${Math.floor(s%3600/60)}m`;
+
+function color(s, mode) {
+  if (s.kind === 'timeout') return '#d03b3b';
+  if (s.kind === 'other') return '#898781';
+  if (mode === 'ranges') return RAMP[Math.min(9, s.order)];
+  return RAMP[Math.round(s._i / Math.max(1, s._n - 1) * 9)];
+}
+
+for (const id of ['period', 'mode']) {
+  const el = document.getElementById(id);
+  const key = id === 'period' ? 'minutes' : 'mode';
+  if (params.get(key)) el.value = params.get(key);
+  el.onchange = () => { params.set(key, el.value); params.delete('from'); params.delete('to'); location.search = params.toString(); };
+}
+document.getElementById('csv').href = '/api/export/events.csv?' + params;
+document.getElementById('raw').href = '/api/export/samples.csv?' + params;
+
+fetch('/api/report?' + params).then(r => r.json()).then(R => {
+  const c = R.cfg;
+  document.getElementById('meta').innerHTML =
+    `Period: <b>${ts(R.start)}</b> to <b>${ts(R.end)}</b> · generated ${ts(R.generated)} · deviation rule: slower than ${c.deviation_factor}× normal and at least ${c.deviation_min_delta_ms} ms above it${c.high_ms ? `, or ≥ ${c.high_ms} ms` : ''}, or a timeout`;
+  const root = document.getElementById('sections');
+  if (!R.sections.length) root.innerHTML = '<section><p class="none">No targets configured.</p></section>';
+  R.sections.forEach((sec, idx) => {
+    const s = sec.summary, ev = sec.events, sl = sec.distribution.slices;
+    const normal = sl.filter(x => !x.kind); normal.forEach((x, i) => { x._i = i; x._n = normal.length; });
+    let html = `<section><h2>${esc(s.target)}</h2>`;
+    if (!s.total) { root.insertAdjacentHTML('beforeend', html + '<p class="none">No pings recorded in this period.</p></section>'); return; }
+    const border = s.loss_pct > 1 || ev.length > 10 ? '#d03b3b' : ev.length ? '#fab219' : '#0ca30c';
+    html += `<div class="verdict" style="border-color:${border}">${ev.length === 0 ? '✔ Stable: no deviations from normal'
+      : `▲ ${ev.length} deviation event${ev.length === 1 ? '' : 's'}, ${s.deviation_samples} deviating pings (${s.deviation_pct.toFixed(2)}%)`} · packet loss ${s.loss_pct.toFixed(2)}%</div>`;
+    const stat = (k, v) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+    html += `<div class="stats">${stat('Pings', s.total.toLocaleString())}${stat('Min ms', ms(s.min))}${stat('Avg ms', ms(s.avg))}${stat('p50 ms', ms(s.p50))}
+      ${stat('p95 ms', ms(s.p95))}${stat('p99 ms', ms(s.p99))}${stat('Max ms', ms(s.max))}${stat('Timeouts', s.timeouts)}</div>`;
+    html += `<h3>Response distribution</h3><div class="grid"><div style="height:240px;position:relative"><canvas id="pie${idx}"></canvas></div>
+      <table><tr><th>Response</th><th class="n">Share</th><th class="n">Pings</th></tr>` +
+      [...sl].sort((a, b) => b.count - a.count).map(x => `<tr><td><span class="sw" style="background:${color(x, R.mode)}"></span>${esc(x.label)}</td>
+        <td class="n">${x.pct.toFixed(1)}%</td><td class="n">${x.count.toLocaleString()}</td></tr>`).join('') + `</table></div>`;
+    const P = sec.pattern, F = P.finding;
+    const fcol = F.status === 'pattern' ? '#ec835a' : F.status === 'none' ? '#0ca30c' : '#898781';
+    html += `<h3>Time pattern (minute of the hour)</h3>
+      <div class="verdict" style="border-color:${fcol}">${{pattern: '▲', none: '✔', insufficient: '◌'}[F.status]} ${esc(F.text)}</div>
+      <div style="height:200px;position:relative"><canvas id="min${idx}"></canvas></div>`;
+    html += `<h3>Deviations from normal</h3>` + (ev.length ? `<table><tr><th>Started</th><th>Ended</th><th class="n">Duration</th><th class="n">Deviating pings</th>
+      <th class="n">Timeouts</th><th class="n">Peak ms</th><th class="n">Avg ms</th><th class="n">Normal ms</th></tr>` +
+      ev.map(e => `<tr><td>${ts(e.start_ts)}</td><td>${e.end_ts ? ts(e.end_ts) : 'ongoing'}</td><td class="n">${dur(e.duration_s)}</td>
+        <td class="n">${e.dev_samples}</td><td class="n">${e.timeouts}</td><td class="n">${ms(e.peak_ms)}</td><td class="n">${ms(e.avg_ms)}</td>
+        <td class="n">${ms(e.baseline_ms)}</td></tr>`).join('') + '</table>' : '<p class="none">None.</p>');
+    root.insertAdjacentHTML('beforeend', html + '</section>');
+    const bm = sec.pattern.by_minute;
+    new Chart(document.getElementById('min' + idx), { type: 'bar',
+      data: { labels: bm.map(m => ':' + String(m.minute).padStart(2, '0')),
+              datasets: [{ data: bm.map(m => m.dev_pct), backgroundColor: bm.map(m => m.flagged ? '#ec835a' : '#2a78d6'),
+                           borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: 'bottom', barPercentage: 0.85, categoryPercentage: 0.95 }] },
+      options: { maintainAspectRatio: false, animation: false,
+        scales: { x: { grid: { display: false }, ticks: { autoSkip: false, maxRotation: 0, color: '#52514e', callback: (v, i) => i % 5 === 0 ? ':' + String(i).padStart(2, '0') : '' } },
+                  y: { beginAtZero: true, grid: { color: '#e1e0d9' }, ticks: { color: '#52514e' }, title: { display: true, text: '% of pings deviating', color: '#52514e' } } },
+        plugins: { legend: { display: false }, tooltip: { callbacks: {
+          title: it => `Minute ${it[0].label} past the hour`,
+          label: c => { const m = bm[c.dataIndex]; return [`${m.dev_pct.toFixed(1)}% deviating (${m.dev}/${m.total})`, `hours affected: ${m.hours_dev} of ${m.hours_seen}`, `typical peak ${ms(m.avg_hour_max)} ms`]; } } } } } });
+    new Chart(document.getElementById('pie' + idx), { type: 'pie',
+      data: { labels: sl.map(x => x.label), datasets: [{ data: sl.map(x => x.count), backgroundColor: sl.map(x => color(x, R.mode)), borderColor: '#fcfcfb', borderWidth: 2 }] },
+      options: { maintainAspectRatio: false, animation: false, plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: c => ` ${sl[c.dataIndex].label}: ${sl[c.dataIndex].pct.toFixed(1)}%` } } } } });
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+# Runtime state (per machine)
+data/
+config.json
+
+# Build outputs - publish exes as GitHub Releases, not commits
+*.exe
+dist/
+
+# Internal handover doc (mentions internal hosts)
+docs/

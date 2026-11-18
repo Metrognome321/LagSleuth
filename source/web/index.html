@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PingWatch</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="/static/chart.umd.min.js"></script>
+<style>
+  :root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321;
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835;
+    --series: #3987e5;
+    --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--text); font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 20px; border-bottom: 1px solid var(--axis); flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  header .spacer { flex: 1; }
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .seg { display: inline-flex; border: 1px solid var(--axis); border-radius: 6px; overflow: hidden; }
+  .seg button { background: transparent; color: var(--text-2); border: 0; padding: 6px 10px; cursor: pointer; font: inherit; }
+  .seg button + button { border-left: 1px solid var(--axis); }
+  .seg button.on { background: var(--surface-2); color: var(--text); }
+  input, .btn { background: var(--surface); color: var(--text); border: 1px solid var(--axis); border-radius: 6px; padding: 6px 10px; font: inherit; }
+  .btn { cursor: pointer; text-decoration: none; display: inline-block; }
+  .btn:hover { background: var(--surface-2); }
+  main { padding: 16px 20px; display: grid; gap: 16px; grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr); }
+  .panel { background: var(--surface); border: 1px solid var(--grid); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+  .panel h2 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; display: flex; align-items: center; gap: 8px; }
+  .panel h2 .sub { text-transform: none; letter-spacing: 0; color: var(--muted); font-weight: 400; }
+  .full { grid-column: 1 / -1; }
+  /* target cards */
+  .targets { display: flex; gap: 10px; flex-wrap: wrap; }
+  .tcard { background: var(--surface); border: 1px solid var(--grid); border-radius: 10px; padding: 10px 14px; cursor: pointer; min-width: 190px; position: relative; }
+  .tcard.sel { border-color: var(--series); box-shadow: 0 0 0 1px var(--series) inset; }
+  .tcard .name { font-weight: 600; font-family: var(--mono); }
+  .tcard .big { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tcard .meta { color: var(--muted); font-size: 12px; }
+  .tcard .x { position: absolute; top: 6px; right: 8px; color: var(--muted); border: 0; background: none; cursor: pointer; font-size: 14px; }
+  .tcard .x:hover { color: var(--text); }
+  .pill { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid; }
+  .pill.ok { color: var(--good); border-color: var(--good); }
+  .pill.bad { color: var(--critical); border-color: var(--critical); }
+  .pill.wait { color: var(--muted); border-color: var(--axis); }
+  /* stat tiles */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
+  .tile { background: var(--surface-2); border-radius: 8px; padding: 8px 12px; }
+  .tile .k { color: var(--muted); font-size: 12px; }
+  .tile .v { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tile .v small { font-size: 12px; color: var(--text-2); font-weight: 400; }
+  /* live */
+  .chartbox { position: relative; height: 260px; }
+  .log { font-family: var(--mono); font-size: 12.5px; height: 190px; overflow-y: auto; background: #111110; border-radius: 6px; padding: 8px 10px; margin-top: 12px; }
+  .log div { white-space: nowrap; color: var(--text-2); }
+  .log .t { color: var(--muted); }
+  .log .dev { color: var(--serious); }
+  .log .to { color: var(--critical); }
+  /* pie */
+  .piebox { position: relative; height: 240px; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.n, th.n { text-align: right; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .bar { height: 6px; background: var(--series); border-radius: 3px; opacity: .8; }
+  .legend { margin-top: 10px; max-height: 260px; overflow-y: auto; }
+  .devs { max-height: 380px; overflow-y: auto; }
+  tr.ongoing td { background: rgba(208, 59, 59, .10); }
+  .empty { color: var(--muted); padding: 14px 4px; }
+  .finding { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: 8px; background: var(--surface-2); border-left: 4px solid var(--muted); margin-bottom: 14px; }
+  .finding.pattern { border-left-color: var(--serious); }
+  .finding.none { border-left-color: var(--good); }
+  .finding .ic { font-size: 16px; line-height: 1.3; }
+  .pgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+  .pgrid h3 { margin: 0 0 6px; font-size: 12px; color: var(--muted); font-weight: 500; display: flex; align-items: center; gap: 8px; }
+  .hm-wrap { position: relative; }
+  #heatmap { display: block; width: 100%; }
+  .hm-legend { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-top: 6px; flex-wrap: wrap; }
+  .hm-legend .grad { width: 140px; height: 8px; border-radius: 4px; }
+  .tip { position: fixed; pointer-events: none; background: #000; border: 1px solid var(--axis); border-radius: 6px; padding: 6px 9px; font-size: 12px; color: var(--text); display: none; z-index: 10; white-space: nowrap; }
+  .devs { overflow-x: auto; }
+  @media (max-width: 1100px) { .pgrid { grid-template-columns: 1fr; } }
+  .gtools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .gtools select, .gtools input { background: var(--surface); color: var(--text); border: 1px solid var(--axis); border-radius: 6px; padding: 5px 8px; font: inherit; color-scheme: dark; }
+  .gtools .btn { padding: 5px 10px; }
+  .gtools .btn.primary { border-color: var(--good); color: var(--good); }
+  .gtools .sep { width: 1px; height: 22px; background: var(--axis); }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid; font-weight: 600; }
+  .badge.live { color: var(--good); border-color: var(--good); }
+  .badge.live::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--good); animation: pulse 1.4s infinite; }
+  .badge.frozen { color: var(--warning); border-color: var(--warning); }
+  @keyframes pulse { 50% { opacity: .25; } }
+  .hint { color: var(--muted); font-size: 12px; }
+  #graphBox { height: 320px; cursor: grab; }
+  #graphBox.dragging { cursor: grabbing; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--surface-2); border: 1px solid var(--axis); padding: 8px 14px; border-radius: 8px; display: none; z-index: 20; }
+  tr.jump { cursor: pointer; }
+  tr.jump:hover td { background: var(--surface-2); }
+  #heatmap { cursor: pointer; }
+  .distgrid { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 20px; align-items: start; }
+  .distgrid .legend { margin-top: 0; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>PingWatch</h1>
+  <form id="addForm" class="controls">
+    <input id="newTarget" placeholder="Add hosts / IPs (comma or space separated)" size="38">
+    <button class="btn" type="submit">Add</button>
+  </form>
+  <div class="spacer"></div>
+  <div class="controls">
+    <span style="color:var(--muted)">Stats window</span>
+    <div class="seg" id="range">
+      <button data-m="15">15m</button><button data-m="60" class="on">1h</button><button data-m="360">6h</button>
+      <button data-m="1440">24h</button><button data-m="10080">7d</button><button data-m="43200">30d</button>
+    </div>
+    <a class="btn" id="reportBtn" target="_blank">Report</a>
+  </div>
+</header>
+
+<main>
+  <section class="full targets" id="targets"></section>
+
+  <section class="panel full">
+    <h2>Summary <span class="sub" id="sumSub"></span></h2>
+    <div class="tiles" id="tiles"></div>
+  </section>
+
+  <section class="panel full" id="graphPanel">
+    <h2>Ping graph <span class="sub" id="liveSub"></span>
+      <span style="flex:1"></span>
+      <span class="badge live" id="modeBadge">LIVE</span>
+    </h2>
+    <div class="gtools">
+      <button class="btn" id="pauseBtn" title="Space">⏸ Pause</button>
+      <button class="btn primary" id="liveBtn" style="display:none">● Back to live</button>
+      <span class="sep"></span>
+      <button class="btn" id="backBtn" title="Earlier (←)">◀</button>
+      <select id="spanSel" title="How much time the graph shows">
+        <option value="120">2 min</option><option value="600">10 min</option><option value="1800">30 min</option>
+        <option value="3600">1 hour</option><option value="21600">6 hours</option><option value="86400">24 hours</option>
+        <option value="604800">7 days</option><option value="custom" hidden>custom</option>
+      </select>
+      <button class="btn" id="fwdBtn" title="Later (→)">▶</button>
+      <span class="sep"></span>
+      <input type="datetime-local" id="gotoInput" step="1" title="Jump to a date and time">
+      <button class="btn" id="gotoBtn">Go</button>
+      <span class="sep"></span>
+      <span class="seg" id="liveScope"><button data-v="one" class="on">Selected</button><button data-v="all">All targets</button></span>
+      <span style="flex:1"></span>
+      <button class="btn" id="copyBtn" title="Copy the graph as an image, then paste into Teams/email">📋 Copy image</button>
+      <button class="btn" id="saveBtn">⬇ Save PNG</button>
+    </div>
+    <div class="chartbox" id="graphBox"><canvas id="graph"></canvas></div>
+    <div class="hint" style="margin-top:6px">Drag the graph to scroll back through history · mouse wheel to zoom · Space to pause · ← → to step · click a deviation or heatmap cell to jump to it</div>
+    <div class="log" id="log"></div>
+  </section>
+
+  <section class="panel full">
+    <h2>Response distribution <span class="sub" id="distSub"></span>
+      <span class="spacer" style="flex:1"></span>
+      <span class="seg" id="mode"><button data-v="exact" class="on">Exact ms</button><button data-v="ranges">Ranges</button></span>
+    </h2>
+    <div class="distgrid">
+      <div class="piebox"><canvas id="pieChart"></canvas></div>
+      <div class="legend"><table id="distTable"></table></div>
+    </div>
+  </section>
+
+  <section class="panel full">
+    <h2>Time pattern <span class="sub" id="patSub"></span>
+      <span style="flex:1"></span>
+      <span class="seg" id="patRange"><button data-m="360">6h</button><button data-m="1440" class="on">24h</button><button data-m="10080">7d</button></span>
+    </h2>
+    <div class="finding" id="finding"><span class="ic">…</span><span>Loading…</span></div>
+    <div class="pgrid">
+      <div>
+        <h3>By minute of the hour <span style="flex:1"></span>
+          <span class="seg" id="patMetric"><button data-v="dev" class="on">Deviating %</button><button data-v="peak">Typical peak ms</button><button data-v="avg">Avg ms</button></span>
+        </h3>
+        <div class="chartbox" style="height:240px"><canvas id="minuteChart"></canvas></div>
+      </div>
+      <div>
+        <h3>Worst ping per minute, each row = one hour</h3>
+        <div class="hm-wrap"><canvas id="heatmap"></canvas></div>
+        <div class="hm-legend" id="hmLegend"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel full">
+    <h2>Deviations from normal
+      <span class="sub" id="devSub"></span>
+      <span style="flex:1"></span>
+      <span class="seg" id="devScope"><button data-v="one" class="on">This target</button><button data-v="all">All targets</button></span>
+      <a class="btn" id="csvEvents" style="text-transform:none;letter-spacing:0;font-weight:400">Export CSV</a>
+      <a class="btn" id="csvSamples" style="text-transform:none;letter-spacing:0;font-weight:400">Raw samples CSV</a>
+    </h2>
+    <div class="devs"><table id="devTable"></table></div>
+  </section>
+</main>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const C = { text: css('--text'), text2: css('--text-2'), muted: css('--muted'), grid: css('--grid'), axis: css('--axis'),
+            surface: css('--surface'), series: css('--series'), serious: css('--serious'), critical: css('--critical') };
+// ordinal blue ramp, fastest (darkest, recedes) -> slowest (lightest, most salient on dark surface)
+const RAMP = ['#184f95','#1c5cab','#256abf','#2a78d6','#3987e5','#5598e7','#6da7ec','#86b6ef','#9ec5f4','#b7d3f6'];
+
+const state = { target: null, minutes: 60, mode: 'exact', devScope: 'one', liveScope: 'one' };
+// categorical palette (dark steps) - fixed order, follows the target, never cycled
+const CAT = ['#3987e5','#d95926','#199e70','#c98500','#d55181','#0ca30c','#9085e9','#e66767'];
+const targetColor = {};
+function colorFor(t) {
+  if (!(t in targetColor)) { const used = Object.values(targetColor); targetColor[t] = CAT.find(c => !used.includes(c)) || null; }
+  return targetColor[t];
+}
+Chart.defaults.color = C.text2;
+Chart.defaults.font.family = '"Segoe UI", system-ui, sans-serif';
+
+const fmt = v => v == null ? '–' : (v < 10 ? v.toFixed(1) : Math.round(v).toString());
+const tstr = ts => new Date(ts * 1000).toLocaleTimeString();
+const dstr = ts => new Date(ts * 1000).toLocaleString();
+const dur = s => s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.floor(s/60)}m ${Math.round(s%60)}s` : `${Math.floor(s/3600)}h ${Math.floor(s%3600/60)}m`;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const q = () => `minutes=${state.minutes}`;
+
+/* ---------------- ping graph (live + history) ---------------- */
+const view = { live: true, span: 120, end: null, data: null, reqId: 0, lastLoad: 0, liveData: {} };
+const STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400, 172800];
+const tzOff = new Date().getTimezoneOffset() * 60;   // seconds, so ticks land on local clock boundaries
+
+function tickLabel(ts, span) {
+  const d = new Date(ts * 1000);
+  if (span > 2 * 86400) return d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (span > 3600) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+const fullTime = ts => { const d = new Date(ts * 1000); return d.toLocaleDateString() + ' ' + d.toLocaleTimeString(); };
+
+const graph = new Chart(document.getElementById('graph'), {
+  type: 'line', data: { datasets: [] },
+  options: {
+    animation: false, maintainAspectRatio: false, parsing: false, normalized: true,
+    interaction: { mode: 'nearest', axis: 'x', intersect: false },
+    scales: {
+      x: { type: 'linear', grid: { color: C.grid }, border: { color: C.axis },
+           ticks: { color: C.muted, maxRotation: 0, autoSkip: false, callback: v => tickLabel(v, view.span) },
+           afterBuildTicks: ax => {
+             const span = ax.max - ax.min;
+             const step = STEPS.find(s => span / s <= 8) || 172800;
+             const first = Math.ceil((ax.min - tzOff) / step) * step + tzOff;
+             const t = [];
+             for (let v = first; v <= ax.max; v += step) t.push({ value: v });
+             ax.ticks = t;
+           } },
+      y: { beginAtZero: true, grid: { color: C.grid }, border: { color: C.axis }, ticks: { color: C.muted }, title: { display: true, text: 'ms', color: C.muted } },
+    },
+    plugins: {
+      legend: { position: 'bottom', labels: { boxWidth: 14, boxHeight: 2, color: C.text2, filter: i => !i.text.startsWith('_') } },
+      tooltip: { filter: i => !i.dataset.label.startsWith('_') && i.dataset.label !== 'Normal' && i.dataset.label !== 'Deviation threshold',
+        callbacks: {
+          title: it => it.length ? fullTime(it[0].parsed.x) : '',
+          label: c => {
+            const r = c.raw;
+            if (c.dataset.label.startsWith('Timeout')) return `${c.dataset._t || ''} timeout${r.to > 1 ? ` ×${r.to}` : ''}`;
+            if (r.max !== undefined) return `${c.dataset.label}: worst ${fmt(r.max)} ms · avg ${fmt(r.avg)} ms · ${r.dev} of ${r.n} deviated${r.to ? ` · ${r.to} timeouts` : ''}`;
+            return `${c.dataset.label}: ${fmt(c.parsed.y)} ms${r.dev ? '  ▲ deviation' : ''}`;
+          } } },
+    },
+  },
+});
+
+function visibleTargets() {
+  if (state.liveScope === 'all') return Object.keys(view.liveData).filter(t => colorFor(t));
+  return state.target ? [state.target] : [];
+}
+
+async function loadGraph() {
+  const targets = visibleTargets();
+  if (!targets.length) return;
+  const now = Date.now() / 1000;
+  const end = view.live ? now : Math.min(view.end, now);
+  const start = end - view.span;
+  const id = ++view.reqId;
+  const maxPts = Math.max(300, Math.round(document.getElementById('graphBox').clientWidth));
+  const res = await Promise.all(targets.map(t =>
+    getJSON(`/api/samples?target=${encodeURIComponent(t)}&from=${start}&to=${end}&max=${maxPts}`)));
+  if (id !== view.reqId) return;          // a newer request superseded this one
+  view.data = { start, end, res };
+  view.lastLoad = Date.now();
+  renderGraph();
+}
+
+function renderGraph() {
+  const D = view.data; if (!D) return;
+  const ds = [];
+  let ymax = 1;
+  const bucketed = D.res.some(r => r.bucket_s > 0);
+  const per = bucketed ? D.res.find(r => r.bucket_s > 0).bucket_s : 0;
+  const perLabel = per ? (per < 60 ? `${per}s` : per < 3600 ? `${per / 60} min` : `${per / 3600} h`) : '';
+  const timeouts = [];
+
+  D.res.forEach(r => {
+    const single = D.res.length === 1;
+    const col = single ? C.series : colorFor(r.target);
+    if (r.bucket_s > 0) {
+      const pts = []; let prevB = null;
+      r.points.filter(p => p.max != null).forEach(p => {
+        if (prevB != null && p.ts - prevB > r.bucket_s * 1.5) pts.push({ x: prevB + r.bucket_s, y: null });
+        pts.push({ x: p.ts + r.bucket_s / 2, y: p.max, max: p.max, avg: p.avg, n: p.n, dev: p.dev, to: p.to });
+        prevB = p.ts;
+      });
+      pts.forEach(p => ymax = Math.max(ymax, p.y));
+      ds.push({ label: single ? `Worst per ${perLabel}` : r.target, data: pts, borderColor: col, backgroundColor: col, borderWidth: 2, tension: 0, spanGaps: false,
+        pointRadius: ctx => ctx.raw && ctx.raw.dev ? 3 : 0, pointBackgroundColor: C.serious, pointBorderColor: C.surface, pointBorderWidth: 1.5 });
+      if (single) ds.push({ label: `Average per ${perLabel}`, data: r.points.filter(p => p.avg != null).map(p => ({ x: p.ts + r.bucket_s / 2, y: p.avg, max: p.max, avg: p.avg, n: p.n, dev: p.dev, to: p.to })),
+        borderColor: '#86b6ef', borderWidth: 1, pointRadius: 0, tension: 0 });
+      r.points.filter(p => p.to > 0).forEach(p => timeouts.push({ x: p.ts + r.bucket_s / 2, to: p.to, t: r.target }));
+    } else {
+      // break the line across gaps (timeouts / app not running) so it never draws a fake straight segment
+      const pts = []; let prev = null;
+      r.points.forEach(p => {
+        if (prev && p.ts - prev > 5) pts.push({ x: prev + 1, y: null });
+        pts.push({ x: p.ts, y: p.rtt, dev: p.dev });
+        if (p.rtt == null) timeouts.push({ x: p.ts, to: 1, t: r.target });
+        else ymax = Math.max(ymax, p.rtt);
+        prev = p.ts;
+      });
+      ds.push({ label: single ? 'Response (ms)' : r.target, data: pts, borderColor: col, backgroundColor: col, borderWidth: 2, tension: 0, spanGaps: false,
+        pointRadius: ctx => ctx.raw && ctx.raw.dev && ctx.raw.y != null ? 4 : 0, pointHoverRadius: 5,
+        pointBackgroundColor: C.serious, pointBorderColor: C.surface, pointBorderWidth: 2 });
+    }
+  });
+
+  const live = view.liveData[state.target];
+  if (D.res.length === 1) {
+    if (view.live && live && live.baseline != null) {
+      ds.push({ label: 'Normal', data: [{ x: D.start, y: live.baseline }, { x: D.end, y: live.baseline }], borderColor: C.muted, borderWidth: 1.5, borderDash: [4, 4], pointRadius: 0 });
+      ds.push({ label: 'Deviation threshold', data: [{ x: D.start, y: live.threshold }, { x: D.end, y: live.threshold }], borderColor: C.serious, borderWidth: 1.5, borderDash: [2, 3], pointRadius: 0 });
+      ymax = Math.max(ymax, live.threshold);
+    } else if (D.res[0].median != null) {
+      const m = D.res[0].median;
+      ds.push({ label: 'Normal', data: [{ x: D.start, y: m }, { x: D.end, y: m }], borderColor: C.muted, borderWidth: 1.5, borderDash: [4, 4], pointRadius: 0 });
+    }
+  }
+  const ty = ymax * 1.05;
+  if (timeouts.length) ds.push({ label: 'Timeout', type: 'scatter', data: timeouts.map(t => ({ x: t.x, y: ty, to: t.to })),
+    pointStyle: 'crossRot', pointRadius: 6, borderColor: C.critical, borderWidth: 2, _t: D.res.length === 1 ? '' : '' });
+  else ds.push({ label: 'Timeout', type: 'scatter', data: [], pointStyle: 'crossRot', borderColor: C.critical, borderWidth: 2 });
+
+  graph.data.datasets = ds;
+  graph.options.scales.x.min = D.start;
+  graph.options.scales.x.max = D.end;
+  graph.options.scales.y.max = Math.ceil(ty * 1.08);
+  graph.update('none');
+
+  // header text + badge
+  const tgt = D.res.length === 1 ? D.res[0].target : `${D.res.length} targets`;
+  const total = D.res.reduce((a, r) => a + r.total, 0);
+  document.getElementById('liveSub').textContent = `${tgt} · ${fullTime(D.start)} → ${view.live ? 'now' : fullTime(D.end)} · ${total.toLocaleString()} pings` +
+    (per ? ` · each point = worst ping in ${perLabel}` : '') +
+    (view.live && live && D.res.length === 1 ? ` · normal ${fmt(live.baseline)} ms · threshold ${fmt(live.threshold)} ms` : '');
+  const badge = document.getElementById('modeBadge');
+  badge.className = 'badge ' + (view.live ? 'live' : 'frozen');
+  badge.textContent = view.live ? 'LIVE' : '⏸ PAUSED · HISTORY';
+  document.getElementById('pauseBtn').style.display = view.live ? '' : 'none';
+  document.getElementById('liveBtn').style.display = view.live ? 'none' : '';
+  document.getElementById('fwdBtn').disabled = view.live;
+
+  // log: the pings at the end of the visible window
+  const rows = D.res.flatMap(r => r.log.map(x => ({ ...x, t: r.target }))).sort((a, b) => b.ts - a.ts).slice(0, 150);
+  document.getElementById('log').innerHTML = rows.map(x => {
+    const cls = x.rtt == null ? 'to' : x.dev ? 'dev' : '';
+    const msg = x.rtt == null ? `Request to ${esc(x.t)} timed out` : `Reply from ${esc(x.t)}: time=${fmt(x.rtt)}ms${x.dev ? '   ▲ deviation' : ''}`;
+    return `<div class="${cls}"><span class="t">${view.span > 86400 ? fullTime(x.ts) : new Date(x.ts * 1000).toLocaleTimeString()}</span>  ${msg}</div>`;
+  }).join('') || '<div class="t">No pings recorded in this period.</div>';
+}
+
+function syncSpanSelect() {
+  const sel = document.getElementById('spanSel');
+  const opt = [...sel.options].find(o => +o.value === Math.round(view.span));
+  const custom = sel.querySelector('[value=custom]');
+  if (opt) { sel.value = opt.value; custom.hidden = true; }
+  else { custom.hidden = false; custom.textContent = (s => s >= 86400 ? `${+(s / 86400).toFixed(1)} days` : s >= 3600 ? `${+(s / 3600).toFixed(1)} hours` : s >= 60 ? `${Math.round(s / 60)} min` : `${Math.round(s)} s`)(view.span); sel.value = 'custom'; }
+}
+
+function freeze(end) { view.live = false; view.end = end ?? (view.data ? view.data.end : Date.now() / 1000); }
+function goLive() { view.live = true; view.end = null; loadGraph(); }
+function setView(start, end) {
+  const now = Date.now() / 1000;
+  view.span = Math.min(Math.max(end - start, 30), 30 * 86400);
+  freeze(Math.min(end, now));
+  syncSpanSelect();
+  loadGraph();
+}
+function jumpTo(start, end, target) {
+  if (target && target !== state.target && view.liveData[target]) { state.target = target; refreshStats(); refreshPattern(); }
+  setView(start, end);
+  document.getElementById('graphPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function step(dir) {
+  const base = view.live ? Date.now() / 1000 : view.end;
+  const end = Math.min(base + dir * view.span / 2, Date.now() / 1000);
+  freeze(end); loadGraph();
+}
+
+document.getElementById('pauseBtn').onclick = () => { freeze(); renderGraph(); };
+document.getElementById('liveBtn').onclick = goLive;
+document.getElementById('backBtn').onclick = () => step(-1);
+document.getElementById('fwdBtn').onclick = () => step(1);
+document.getElementById('spanSel').onchange = e => {
+  if (e.target.value === 'custom') return;
+  const center = view.live ? null : view.end - view.span / 2;
+  view.span = +e.target.value;
+  if (!view.live) view.end = Math.min(center + view.span / 2, Date.now() / 1000);
+  syncSpanSelect(); loadGraph();
+};
+document.getElementById('gotoBtn').onclick = () => {
+  const v = document.getElementById('gotoInput').value; if (!v) return;
+  const t = new Date(v).getTime() / 1000;
+  setView(t - view.span / 2, t + view.span / 2);
+};
+document.addEventListener('keydown', e => {
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+  if (e.code === 'Space') { e.preventDefault(); view.live ? (freeze(), renderGraph()) : goLive(); }
+  if (e.code === 'ArrowLeft') step(-1);
+  if (e.code === 'ArrowRight' && !view.live) step(1);
+});
+
+// drag to pan, wheel to zoom
+(() => {
+  const box = document.getElementById('graphBox');
+  let drag = null, pending = null;
+  const debounceLoad = () => { clearTimeout(pending); pending = setTimeout(loadGraph, 150); };
+  box.addEventListener('mousedown', e => {
+    if (!view.data || e.button !== 0) return;
+    drag = { x: e.clientX, end: view.live ? view.data.end : view.end, moved: false };
+    box.classList.add('dragging');
+  });
+  window.addEventListener('mousemove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    if (Math.abs(dx) < 3 && !drag.moved) return;
+    drag.moved = true;
+    const area = graph.chartArea;
+    const now = Date.now() / 1000;
+    const end = Math.min(drag.end - dx / (area.right - area.left) * view.span, now);
+    freeze(end);
+    graph.options.scales.x.min = end - view.span; graph.options.scales.x.max = end;
+    graph.update('none');
+    debounceLoad();
+  });
+  window.addEventListener('mouseup', () => { if (drag) { drag = null; box.classList.remove('dragging'); } });
+  box.addEventListener('wheel', e => {
+    if (!view.data) return;
+    e.preventDefault();
+    const area = graph.chartArea;
+    const x = graph.scales.x;
+    const f = e.deltaY > 0 ? 1.3 : 1 / 1.3;
+    const now = Date.now() / 1000;
+    const start0 = x.min, end0 = x.max;
+    const tc = Math.min(Math.max(x.getValueForPixel(e.offsetX), start0), end0);
+    let span = Math.min(Math.max((end0 - start0) * f, 30), 30 * 86400);
+    if (view.live) { view.span = span; syncSpanSelect(); debounceLoad(); return; }
+    let end = tc + (end0 - tc) * span / (end0 - start0);
+    view.span = span; view.end = Math.min(end, now);
+    graph.options.scales.x.min = view.end - span; graph.options.scales.x.max = view.end; graph.update('none');
+    syncSpanSelect(); debounceLoad();
+  }, { passive: false });
+})();
+
+// copy / save the graph as an image (with a title strip so it stands alone in an email)
+function graphImage() {
+  const src = graph.canvas, dpr = window.devicePixelRatio || 1, head = 44 * dpr;
+  const c = document.createElement('canvas');
+  c.width = src.width; c.height = src.height + head;
+  const g = c.getContext('2d');
+  g.fillStyle = C.surface; g.fillRect(0, 0, c.width, c.height);
+  g.fillStyle = C.text; g.font = `600 ${15 * dpr}px "Segoe UI", system-ui, sans-serif`; g.textBaseline = 'middle';
+  const D = view.data;
+  const tgt = D.res.length === 1 ? D.res[0].target : D.res.map(r => r.target).join(', ');
+  g.fillText(`PingWatch · ${tgt}`, 12 * dpr, 16 * dpr);
+  g.fillStyle = C.text2; g.font = `${12 * dpr}px "Segoe UI", system-ui, sans-serif`;
+  g.fillText(`${fullTime(D.start)} → ${fullTime(D.end)}`, 12 * dpr, 34 * dpr);
+  g.drawImage(src, 0, head);
+  return c;
+}
+function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 2200); }
+document.getElementById('saveBtn').onclick = () => {
+  if (!view.data) return;
+  const a = document.createElement('a');
+  const d = new Date(view.data.end * 1000);
+  const stamp = d.toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  a.download = `pingwatch_${(state.liveScope === 'all' ? 'all' : state.target).replace(/[^\w.-]/g, '_')}_${stamp}.png`;
+  a.href = graphImage().toDataURL('image/png'); a.click();
+};
+document.getElementById('copyBtn').onclick = () => {
+  if (!view.data) return;
+  graphImage().toBlob(async b => {
+    try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]); toast('Graph copied: paste it into Teams or an email'); }
+    catch { toast('Copy not allowed by this browser. Use Save PNG instead.'); }
+  });
+};
+
+/* ---------------- pie ---------------- */
+const pieChart = new Chart(document.getElementById('pieChart'), {
+  type: 'pie',
+  data: { labels: [], datasets: [{ data: [], backgroundColor: [], borderColor: C.surface, borderWidth: 2 }] },
+  options: {
+    maintainAspectRatio: false, animation: { duration: 250 },
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: ctx => {
+        const s = ctx.dataset._slices[ctx.dataIndex];
+        return ` ${s.label}: ${s.pct.toFixed(1)}%  (${s.count.toLocaleString()} pings)`;
+      } } },
+    },
+  },
+});
+
+function sliceColor(s, mode) {
+  if (s.kind === 'timeout') return C.critical;
+  if (s.kind === 'other') return C.muted;
+  if (mode === 'ranges') return RAMP[Math.min(RAMP.length - 1, s.order)];
+  // exact ms: spread the shown values across the ramp (fastest darkest) so adjacent slices stay distinct
+  const n = Math.max(1, (s._n || 1) - 1);
+  return RAMP[Math.round((s._i || 0) / n * (RAMP.length - 1))];
+}
+
+
+/* ---------------- time pattern ---------------- */
+const pat = { minutes: 1440, metric: 'dev', data: null };
+const SEQ = ['#12294a','#0d366b','#104281','#184f95','#1c5cab','#256abf','#2a78d6','#3987e5','#5598e7','#6da7ec','#86b6ef','#9ec5f4','#b7d3f6','#cde2fb'];
+const minuteChart = new Chart(document.getElementById('minuteChart'), {
+  type: 'bar',
+  data: { labels: Array.from({ length: 60 }, (_, i) => ':' + String(i).padStart(2, '0')), datasets: [{ data: [], backgroundColor: [], borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: 'bottom', barPercentage: 0.85, categoryPercentage: 0.95 }] },
+  options: {
+    animation: false, maintainAspectRatio: false,
+    scales: {
+      x: { grid: { display: false }, border: { color: C.axis }, ticks: { color: C.muted, autoSkip: false, maxRotation: 0, callback: (v, i) => i % 5 === 0 ? ':' + String(i).padStart(2, '0') : '' } },
+      y: { beginAtZero: true, grid: { color: C.grid }, border: { display: false }, ticks: { color: C.muted }, title: { display: true, color: C.muted, text: '' } },
+    },
+    plugins: { legend: { display: false }, tooltip: { callbacks: {
+      title: it => `Minute ${it[0].label} past the hour`,
+      label: c => { const m = pat.data.by_minute[c.dataIndex];
+        return [`Deviating: ${m.dev_pct.toFixed(1)}% (${m.dev} of ${m.total} pings)`, `Hours with a deviation: ${m.hours_dev} of ${m.hours_seen}`,
+                `Typical peak: ${fmt(m.avg_hour_max)} ms · avg ${fmt(m.avg)} ms`, `Timeouts: ${m.timeouts}`, ...(m.flagged ? ['▲ Recurring slow minute'] : [])]; } } } },
+  },
+});
+
+async function refreshPattern() {
+  if (!state.target) return;
+  pat.data = await getJSON(`/api/pattern?target=${encodeURIComponent(state.target)}&minutes=${pat.minutes}`);
+  const f = pat.data.finding;
+  const icon = { pattern: '▲', none: '✔', insufficient: '◌' }[f.status];
+  const el = document.getElementById('finding');
+  el.className = 'finding ' + f.status;
+  el.innerHTML = `<span class="ic" style="color:${f.status === 'pattern' ? C.serious : f.status === 'none' ? css('--good') : C.muted}">${icon}</span><span>${esc(f.text)}</span>`;
+  document.getElementById('patSub').textContent = `${state.target} · ${f.hours_total} hour${f.hours_total === 1 ? '' : 's'} of data`;
+  renderMinuteChart();
+  renderHeatmap();
+}
+
+function renderMinuteChart() {
+  const bm = pat.data.by_minute;
+  const val = m => pat.metric === 'dev' ? m.dev_pct : pat.metric === 'peak' ? m.avg_hour_max : m.avg;
+  const ds = minuteChart.data.datasets[0];
+  ds.data = bm.map(val);
+  ds.backgroundColor = bm.map(m => m.flagged ? C.serious : C.series);
+  minuteChart.options.scales.y.title.text = pat.metric === 'dev' ? '% of pings deviating' : 'ms';
+  minuteChart.update();
+}
+
+function heatColor(v, lo, hi) {
+  if (v == null) return null;
+  if (v <= lo) return SEQ[0];
+  const t = Math.log(v / lo) / Math.log(Math.max(hi / lo, 1.0001));
+  return SEQ[Math.min(SEQ.length - 1, Math.max(0, Math.round(t * (SEQ.length - 1))))];
+}
+
+function renderHeatmap() {
+  const cv = document.getElementById('heatmap');
+  const rows = pat.data.hours;
+  const normal = pat.data.finding.normal || 1;
+  let hi = normal * 2;
+  rows.forEach(r => r.max.forEach(v => { if (v != null && v > hi) hi = v; }));
+  const lo = Math.max(normal * 1.5, 0.5);
+  const labelW = 86, topH = 16;
+  const cellH = rows.length <= 24 ? 12 : rows.length <= 72 ? 5 : 3;
+  const W = cv.parentElement.clientWidth, H = topH + Math.max(rows.length, 1) * cellH;
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + 'px';
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const cw = (W - labelW) / 60;
+  g.font = '11px "Segoe UI", system-ui, sans-serif'; g.fillStyle = C.muted; g.textBaseline = 'middle';
+  for (let m = 0; m < 60; m += 10) g.fillText(':' + String(m).padStart(2, '0'), labelW + m * cw, 7);
+  const every = Math.ceil(12 / cellH);
+  rows.forEach((r, i) => {
+    const y = topH + i * cellH;
+    if (i % every === 0) { const d = new Date(r.ts * 1000);
+      g.fillStyle = C.muted; g.fillText(d.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), 0, y + cellH / 2); }
+    for (let m = 0; m < 60; m++) {
+      if (!r.n[m]) continue;
+      g.fillStyle = r.to[m] ? C.critical : heatColor(r.max[m], lo, hi);
+      g.fillRect(labelW + m * cw + 0.5, y + 0.5, Math.max(cw - 1, 1), Math.max(cellH - 1, 1));
+    }
+  });
+  pat.hm = { labelW, topH, cellH, cw, rows };
+  document.getElementById('hmLegend').innerHTML =
+    `<span>≤ ${fmt(lo)} ms</span><span class="grad" style="background:linear-gradient(90deg,${SEQ.join(',')})"></span><span>${fmt(hi)} ms</span>` +
+    `<span style="margin-left:10px"><span class="sw" style="background:${C.critical}"></span>timeout in that minute</span>`;
+}
+
+const tip = document.getElementById('tip');
+document.getElementById('heatmap').addEventListener('mousemove', e => {
+  const h = pat.hm; if (!h) return;
+  const rect = e.target.getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  const m = Math.floor((x - h.labelW) / h.cw), i = Math.floor((y - h.topH) / h.cellH);
+  const r = h.rows[i];
+  if (!r || m < 0 || m > 59 || !r.n[m]) { tip.style.display = 'none'; return; }
+  const d = new Date((r.ts + m * 60) * 1000);
+  tip.innerHTML = `<b>${d.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</b><br>worst ${fmt(r.max[m])} ms · avg ${fmt(r.avg[m])} ms<br>${r.dev[m]} of ${r.n[m]} pings deviated${r.to[m] ? ` · ${r.to[m]} timeout${r.to[m] > 1 ? 's' : ''}` : ''}`;
+  tip.style.display = 'block'; tip.style.left = (e.clientX + 14) + 'px'; tip.style.top = (e.clientY + 10) + 'px';
+});
+document.getElementById('heatmap').addEventListener('mouseleave', () => tip.style.display = 'none');
+window.addEventListener('resize', () => pat.data && renderHeatmap());
+
+document.getElementById('patRange').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.querySelectorAll('#patRange button').forEach(x => x.classList.toggle('on', x === b));
+  pat.minutes = +b.dataset.m; refreshPattern();
+});
+document.getElementById('patMetric').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.querySelectorAll('#patMetric button').forEach(x => x.classList.toggle('on', x === b));
+  pat.metric = b.dataset.v; renderMinuteChart();
+});
+
+/* ---------------- polling ---------------- */
+async function getJSON(u, opts) { const r = await fetch(u, opts); return r.json(); }
+
+async function pollLive() {
+  try {
+    const data = await getJSON('/api/live?n=1');
+    view.liveData = data;
+    renderTargets(data);
+    if (view.live && Date.now() - view.lastLoad >= (view.span <= 1800 ? 900 : 5000)) loadGraph();
+  } catch (e) { console.error(e); }
+}
+
+function renderTargets(data) {
+  const names = Object.keys(data);
+  if (!state.target || !data[state.target]) { state.target = names[0] || null; refreshStats(); refreshPattern(); setTimeout(loadGraph); }
+  const el = document.getElementById('targets');
+  el.innerHTML = names.map(n => {
+    const d = data[n];
+    const status = d.baseline == null ? '<span class="pill wait">◌ Learning</span>'
+      : d.deviating ? '<span class="pill bad">▲ Deviating</span>' : '<span class="pill ok">● Normal</span>';
+    const last = d.last_rtt == null ? (d.last_ts ? 'timeout' : '–') : fmt(d.last_rtt) + ' ms';
+    return `<div class="tcard ${n === state.target ? 'sel' : ''}" data-t="${esc(n)}">
+      <button class="x" title="Remove" data-del="${esc(n)}">✕</button>
+      <div class="name">${esc(n)}</div>
+      <div class="big">${last}</div>
+      <div>${status}</div>
+      <div class="meta">normal ${fmt(d.baseline)} ms · loss 5m ${d.loss_5m.toFixed(1)}%</div>
+    </div>`;
+  }).join('') || '<div class="empty">No targets yet. Add a host or IP above.</div>';
+}
+
+async function refreshStats() {
+  if (!state.target) return;
+  const t = encodeURIComponent(state.target);
+  const [st, evs] = await Promise.all([
+    getJSON(`/api/stats?target=${t}&mode=${state.mode}&${q()}`),
+    getJSON(`/api/events?${q()}` + (state.devScope === 'one' ? `&target=${t}` : '')),
+  ]);
+  renderSummary(st.summary);
+  renderPie(st.distribution);
+  renderEvents(evs);
+  document.getElementById('reportBtn').href = `/report?minutes=${Math.max(state.minutes, 1440)}`;
+  document.getElementById('csvEvents').href = `/api/export/events.csv?${q()}` + (state.devScope === 'one' ? `&target=${t}` : '');
+  document.getElementById('csvSamples').href = `/api/export/samples.csv?${q()}&target=${t}`;
+}
+
+const rangeLabel = () => document.querySelector('#range .on').textContent;
+
+function renderSummary(s) {
+  document.getElementById('sumSub').textContent = `${state.target} · last ${rangeLabel()} · ${s.total.toLocaleString()} pings`;
+  const tile = (k, v, unit = 'ms') => `<div class="tile"><div class="k">${k}</div><div class="v">${v}${v === '–' ? '' : ` <small>${unit}</small>`}</div></div>`;
+  document.getElementById('tiles').innerHTML =
+    tile('Min', fmt(s.min)) + tile('Average', fmt(s.avg)) + tile('Median (p50)', fmt(s.p50)) +
+    tile('p95', fmt(s.p95)) + tile('p99', fmt(s.p99)) + tile('Max', fmt(s.max)) +
+    tile('Packet loss', s.loss_pct.toFixed(2), '%') + tile('Deviating pings', s.deviation_pct.toFixed(2), '%') +
+    tile('Timeouts', s.timeouts.toLocaleString(), '');
+}
+
+function renderPie(dist) {
+  const sl = dist.slices;
+  const normal = sl.filter(s => !s.kind);
+  normal.forEach((s, i) => { s._i = i; s._n = normal.length; });
+  pieChart.data.labels = sl.map(s => s.label);
+  pieChart.data.datasets[0].data = sl.map(s => s.count);
+  pieChart.data.datasets[0].backgroundColor = sl.map(s => sliceColor(s, state.mode));
+  pieChart.data.datasets[0]._slices = sl;
+  pieChart.update();
+  const max = Math.max(...sl.map(s => s.pct), 1);
+  document.getElementById('distTable').innerHTML = sl.length
+    ? `<tr><th>Response</th><th class="n">Share</th><th style="width:35%"></th><th class="n">Pings</th></tr>` +
+      [...sl].sort((a, b) => b.count - a.count).map(s => `<tr>
+        <td><span class="sw" style="background:${sliceColor(s, state.mode)}"></span>${esc(s.label)}</td>
+        <td class="n">${s.pct.toFixed(1)}%</td>
+        <td><div class="bar" style="width:${s.pct / max * 100}%"></div></td>
+        <td class="n">${s.count.toLocaleString()}</td></tr>`).join('')
+    : '<tr><td class="empty">No data in this window yet.</td></tr>';
+}
+
+function renderEvents(evs) {
+  document.getElementById('devSub').textContent = `${evs.length} event${evs.length === 1 ? '' : 's'} · last ${rangeLabel()}`;
+  const all = state.devScope === 'all';
+  document.getElementById('devTable').innerHTML = evs.length
+    ? `<tr>${all ? '<th>Target</th>' : ''}<th>Started</th><th>Ended</th><th class="n">Duration</th><th class="n">Deviating pings</th>
+         <th class="n">Timeouts</th><th class="n">Peak ms</th><th class="n">Avg ms</th><th class="n">Normal ms</th><th class="n">Threshold ms</th></tr>` +
+      evs.map(e => `<tr class="jump ${e.ongoing ? 'ongoing' : ''}" title="Show this on the graph" data-s="${e.start_ts}" data-e="${e.end_ts || e.start_ts + e.duration_s}" data-t="${esc(e.target)}">
+        ${all ? `<td style="font-family:var(--mono)">${esc(e.target)}</td>` : ''}
+        <td>${dstr(e.start_ts)}</td>
+        <td>${e.ongoing ? '<span class="pill bad">▲ Ongoing</span>' : tstr(e.end_ts)}</td>
+        <td class="n">${dur(e.duration_s)}</td><td class="n">${e.dev_samples}</td><td class="n">${e.timeouts}</td>
+        <td class="n">${fmt(e.peak_ms)}</td><td class="n">${fmt(e.avg_ms)}</td>
+        <td class="n">${fmt(e.baseline_ms)}</td><td class="n">${fmt(e.threshold_ms)}</td></tr>`).join('')
+    : '<tr><td class="empty">No deviations in this window. 👍</td></tr>';
+}
+
+/* ---------------- controls ---------------- */
+document.getElementById('devTable').addEventListener('click', e => {
+  const tr = e.target.closest('tr.jump'); if (!tr) return;
+  const s0 = +tr.dataset.s, e0 = +tr.dataset.e;
+  const pad = Math.max(60, (e0 - s0) * 0.75);
+  jumpTo(s0 - pad, e0 + pad, tr.dataset.t);
+});
+document.getElementById('heatmap').addEventListener('click', e => {
+  const h = pat.hm; if (!h) return;
+  const rect = e.target.getBoundingClientRect();
+  const m = Math.floor((e.clientX - rect.left - h.labelW) / h.cw), i = Math.floor((e.clientY - rect.top - h.topH) / h.cellH);
+  const r = h.rows[i]; if (!r || m < 0 || m > 59) return;
+  const t = r.ts + m * 60;
+  jumpTo(t - 120, t + 180);
+});
+
+function seg(id, key, cast = v => v) {
+  document.getElementById(id).addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll(`#${id} button`).forEach(x => x.classList.toggle('on', x === b));
+    state[key] = cast(b.dataset.m ?? b.dataset.v);
+    refreshStats();
+  });
+}
+seg('range', 'minutes', Number);
+seg('mode', 'mode');
+seg('devScope', 'devScope');
+document.getElementById('liveScope').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.querySelectorAll('#liveScope button').forEach(x => x.classList.toggle('on', x === b));
+  state.liveScope = b.dataset.v;
+  loadGraph();
+});
+
+document.getElementById('targets').addEventListener('click', async e => {
+  const del = e.target.closest('[data-del]');
+  if (del) {
+    e.stopPropagation();
+    if (!confirm(`Stop monitoring ${del.dataset.del}? (History is kept.)`)) return;
+    await fetch('/api/targets/' + encodeURIComponent(del.dataset.del), { method: 'DELETE' });
+    delete targetColor[del.dataset.del];
+    if (state.target === del.dataset.del) state.target = null;
+    return pollLive();
+  }
+  const card = e.target.closest('.tcard');
+  if (card) { state.target = card.dataset.t; pollLive(); refreshStats(); refreshPattern(); loadGraph(); }
+});
+
+document.getElementById('addForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const inp = document.getElementById('newTarget');
+  const r = await getJSON('/api/targets', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ target: inp.value.trim() }) });
+  if (r.error) return alert(r.error);
+  state.target = r.added[0]; inp.value = '';
+  setTimeout(() => { pollLive(); refreshStats(); }, 1200);
+});
+
+pollLive();
+setInterval(pollLive, 1000);
+window.addEventListener('resize', () => view.data && renderGraph());
+setInterval(refreshStats, 5000);
+setInterval(refreshPattern, 30000);
+</script>
+</body>
+</html>

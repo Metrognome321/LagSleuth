@@ -1416,11 +1416,18 @@ func routes() *http.ServeMux {
 		if picked {
 			incs = incidentsFor(incs, targets)
 		}
+		var keep map[string]bool // chosen targets: incident rows show only these hosts
+		if picked {
+			keep = targetSet(targets)
+		}
 		multi := []Incident{}
 		for _, inc := range incs {
 			if len(inc.Hosts) >= 2 && len(multi) < 300 {
-				s := logSummary(inc)
+				s := logSummaryFor(inc, keep)
 				inc.Logs = &s
+				if picked {
+					inc = focusIncident(inc, keep)
+				}
 				multi = append(multi, inc)
 			}
 		}

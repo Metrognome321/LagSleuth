@@ -251,10 +251,13 @@ fetch('/api/report?' + params).then(r => r.json()).then(async R => {
     return [d >= 0 ? `disk ${ms(d)} ms` : null, m.cpu != null ? `CPU ${Math.round(m.cpu)}%` : null, m.cpu_stolen ? `stolen ${ms(m.cpu_stolen)} ms` : null].filter(Boolean).join(' · ') || '–'; };
   const ptxt = ps => ps && ps.length ? ` · top: ${ps.map(p => `${esc(p.name)} ${Math.round(p.max_cpu)}%`).join(', ')}` : '';
   let inc = `<section class="flow"><h2>Incidents across hosts</h2>`;
-  inc += I.multi_host.length ? `<table><tr><th>Started</th><th class="n">Duration</th><th class="n">Hosts</th><th>Affected: peak ping · worst disk / CPU</th><th>Stayed normal</th><th class="n">Timeouts</th><th>Event logs</th></tr>` +
-    I.multi_host.map(i => `<tr><td>${ts(i.start_ts)}</td><td class="n">${dur(i.duration_s)}</td><td class="n">${i.hosts.length} of ${i.monitored}</td>
-      <td>${i.hosts.map(h => `<b>${esc(h.target)}</b> ${ms(h.peak_ms)} ms · ${mtxt(h.metrics)}${ptxt(h.top_procs)}`).join('<br>')}${i.local_metrics ? `<br><span class="small">This PC: ${mtxt(i.local_metrics)}${ptxt(i.local_top_procs)}</span>` : ''}</td>
-      <td>${i.clean.map(esc).join(', ') || '–'}</td><td class="n">${i.timeouts}</td>
+  // with chosen targets the server trims each incident to those hosts; other hosts only appear as a count
+  const one = R.picked && targets.length === 1;
+  if (R.picked) inc += `<div class="small" style="margin-bottom:8px">Incidents that hit ${one ? esc(targets[0]) : 'the chosen targets'}, showing only ${one ? 'that host' : 'those hosts'}. Other hosts slow at the same moment are counted, not listed.</div>`;
+  inc += I.multi_host.length ? `<table><tr><th>Started</th><th class="n">Duration</th><th class="n">Hosts</th><th>${one ? '' : 'Affected: '}peak ping · worst disk / CPU</th>${one ? '' : '<th>Stayed normal</th>'}<th class="n">Timeouts</th><th>Event logs</th></tr>` +
+    I.multi_host.map(i => `<tr><td>${ts(i.start_ts)}</td><td class="n">${dur(i.duration_s)}</td><td class="n">${i.hosts.length + (i.also_hit || 0)} of ${i.monitored}</td>
+      <td>${i.hosts.map(h => `<b>${esc(h.target)}</b> ${ms(h.peak_ms)} ms · ${mtxt(h.metrics)}${ptxt(h.top_procs)}`).join('<br>')}${i.also_hit ? `<br><span class="small">+ ${i.also_hit} other host${i.also_hit === 1 ? '' : 's'} slow at the same time</span>` : ''}${i.local_metrics ? `<br><span class="small">This PC: ${mtxt(i.local_metrics)}${ptxt(i.local_top_procs)}</span>` : ''}</td>
+      ${one ? '' : `<td>${i.clean.map(esc).join(', ') || '–'}</td>`}<td class="n">${i.timeouts}</td>
       <td>${i.logs && i.logs.status === 'collected' ? `${i.logs.events} event(s)${i.logs.warnings ? `, ${i.logs.warnings} warning/error` : ''}${i.logs.no_access ? `, ${i.logs.no_access} host(s) no access` : ''}` : (i.logs ? i.logs.status.replace('_', ' ') : '–')}</td></tr>`).join('') + '</table>'
     : '<p class="none">No incident affected more than one host at the same time.</p>';
   root.insertAdjacentHTML('beforeend', inc + '</section>');

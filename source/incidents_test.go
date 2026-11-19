@@ -218,3 +218,20 @@ func TestReqTargetsAndIncidentsFor(t *testing.T) {
 		t.Fatalf("incidentsFor kept %d, want 2", len(got))
 	}
 }
+
+func TestFocusIncident(t *testing.T) {
+	p := func(v float64) *float64 { return &v }
+	inc := Incident{Hosts: []IncidentHost{
+		{Target: "10.20.30.1", StartTS: 100, DevSamples: 5, Timeouts: 1, PeakMs: p(600)},
+		{Target: "10.20.30.11", StartTS: 102, DevSamples: 3, PeakMs: p(200)},
+		{Target: "10.20.30.12", StartTS: 101, DevSamples: 2, Timeouts: 2, PeakMs: p(90)},
+	}, Clean: []string{"10.20.30.13", "8.8.8.8"}, DevSamples: 10, Timeouts: 3, PeakMs: p(600), PeakTarget: "10.20.30.1"}
+	f := focusIncident(inc, targetSet([]string{"10.20.30.11", "10.20.30.12", "10.20.30.13"}))
+	if len(f.Hosts) != 2 || f.AlsoHit != 1 || f.DevSamples != 5 || f.Timeouts != 2 || *f.PeakMs != 200 ||
+		f.PeakTarget != "10.20.30.11" || f.OnsetSpreadS != 1 || len(f.Clean) != 1 || f.Clean[0] != "10.20.30.13" {
+		t.Fatalf("focusIncident wrong: %+v", f)
+	}
+	if len(inc.Hosts) != 3 {
+		t.Fatal("focusIncident changed the original")
+	}
+}

@@ -276,7 +276,10 @@ type LogSummary struct {
 	NoAccess int    `json:"no_access"`
 }
 
-func logSummary(inc Incident) LogSummary {
+func logSummary(inc Incident) LogSummary { return logSummaryFor(inc, nil) }
+
+// logSummaryFor counts only the logs of the hosts in keep (plus this PC); nil keep = every host.
+func logSummaryFor(inc Incident, keep map[string]bool) LogSummary {
 	k := incidentKey(inc)
 	logStoreMu.Lock()
 	l, busy := logStore[k], logBusy[k]
@@ -285,6 +288,9 @@ func logSummary(inc Incident) LogSummary {
 	case l != nil:
 		s := LogSummary{Status: "collected"}
 		for _, h := range l.Hosts {
+			if keep != nil && h.Host != "" && !keep[h.Host] {
+				continue
+			}
 			if h.Status == "no_access" {
 				s.NoAccess++
 			}

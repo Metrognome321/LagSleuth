@@ -164,6 +164,7 @@ type Incident struct {
 	LocalMetrics   map[string]float64 `json:"local_metrics,omitempty"` // the LagSleuth machine during the incident
 	LocalTopProcs  []ProcSummary      `json:"local_top_procs,omitempty"`
 	Logs           *LogSummary        `json:"logs,omitempty"`
+	AlsoHit        int                `json:"also_hit,omitempty"` // report for chosen targets: other hosts slow at the same time
 	lastStart      float64
 }
 
@@ -312,12 +313,51 @@ type incidentFinding struct {
 }
 
 // incidentPattern looks for incidents that hit 2+ hosts at the same minute of the hour, hour after hour.
-// incidentsFor keeps the incidents that hit at least one of the given targets.
-func incidentsFor(incs []Incident, targets []string) []Incident {
+func targetSet(targets []string) map[string]bool {
 	keep := map[string]bool{}
 	for _, t := range targets {
 		keep[t] = true
 	}
+	return keep
+}
+
+// focusIncident trims an incident to the chosen hosts: only their rows, deviating pings, timeouts and peak.
+// AlsoHit counts the other hosts that were slow at the same time; their names and figures are left out.
+func focusIncident(inc Incident, keep map[string]bool) Incident {
+	hosts := []IncidentHost{}
+	for _, h := range inc.Hosts {
+		if keep[h.Target] {
+			hosts = append(hosts, h)
+		}
+	}
+	inc.AlsoHit = len(inc.Hosts) - len(hosts)
+	inc.Hosts = hosts
+	clean := []string{}
+	for _, c := range inc.Clean {
+		if keep[c] {
+			clean = append(clean, c)
+		}
+	}
+	inc.Clean = clean
+	inc.DevSamples, inc.Timeouts, inc.PeakMs, inc.PeakTarget, inc.OnsetSpreadS = 0, 0, nil, "", 0
+	first, last := math.Inf(1), math.Inf(-1)
+	for _, h := range hosts {
+		inc.DevSamples += h.DevSamples
+		inc.Timeouts += h.Timeouts
+		if h.PeakMs != nil && (inc.PeakMs == nil || *h.PeakMs > *inc.PeakMs) {
+			inc.PeakMs, inc.PeakTarget = h.PeakMs, h.Target
+		}
+		first, last = math.Min(first, h.StartTS), math.Max(last, h.StartTS)
+	}
+	if len(hosts) > 1 {
+		inc.OnsetSpreadS = last - first
+	}
+	return inc
+}
+
+// incidentsFor keeps the incidents that hit at least one of the given targets.
+func incidentsFor(incs []Incident, targets []string) []Incident {
+	keep := targetSet(targets)
 	out := []Incident{}
 	for _, inc := range incs {
 		for _, h := range inc.Hosts {
@@ -440,16 +480,20 @@ func incidentRoutes(mux *http.ServeMux) {
 		minHosts, _ := strconv.Atoi(r.URL.Query().Get("min_hosts"))
 		incs := buildIncidents(start, end)
 		if targets, picked := reqTargets(r); picked {
+			keep := targetSet(targets)
 			incs = incidentsFor(incs, targets)
+			for i := range incs {
+				incs[i] = focusIncident(incs[i], keep)
+			}
 		}
 		w.Header().Set("Content-Type", "text/csv")
 		w.Header().Set("Content-Disposition", "attachment; filename=lagsleuth_incidents.csv")
 		cw := csv.NewWriter(w)
 		cw.Write([]string{"start", "end", "duration_s", "hosts_affected", "hosts_monitored", "affected", "clean",
-			"worst_target", "peak_ms", "deviating_pings", "timeouts", "onset_spread_s", "monitor_stall_ms"})
+			"worst_target", "peak_ms", "deviating_pings", "timeouts", "onset_spread_s", "monitor_stall_ms", "other_hosts_affected"})
 		for i := len(incs) - 1; i >= 0; i-- {
 			inc := incs[i]
-			if len(inc.Hosts) < minHosts {
+			if len(inc.Hosts)+inc.AlsoHit < minHosts {
 				continue
 			}
 			names := make([]string, len(inc.Hosts))
@@ -467,7 +511,7 @@ func incidentRoutes(mux *http.ServeMux) {
 			cw.Write([]string{fmtTS(inc.StartTS), endS, strconv.FormatFloat(math.Round(inc.DurationS*10)/10, 'f', -1, 64),
 				strconv.Itoa(len(inc.Hosts)), strconv.Itoa(inc.Monitored), strings.Join(names, "; "), strings.Join(inc.Clean, "; "),
 				inc.PeakTarget, num(inc.PeakMs), strconv.Itoa(inc.DevSamples), strconv.Itoa(inc.Timeouts),
-				strconv.FormatFloat(math.Round(inc.OnsetSpreadS*10)/10, 'f', -1, 64), num(inc.MonitorStallMs)})
+				strconv.FormatFloat(math.Round(inc.OnsetSpreadS*10)/10, 'f', -1, 64), num(inc.MonitorStallMs), strconv.Itoa(inc.AlsoHit)})
 		}
 		cw.Flush()
 	})

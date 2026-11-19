@@ -13,6 +13,10 @@ host is unaffected.
 - `source/main.go` - config, storage, monitors, deviation/event logic, stats, pattern analysis, HTTP API
 - `source/ping_windows.go` - native ICMP via iphlpapi `IcmpSendEcho`
 - `source/ping_other.go` - Linux/macOS fallback via system `ping` (testing only)
+- `source/incidents.go`, `source/eventlog*.go`, `source/metrics.go` - cross-host incidents, event logs, performance counters
+- `source/creds.go`, `source/creds_windows.go` - server credentials, memory only: password encrypted with
+  CryptProtectMemory, network-only logon token, wevtapi for event logs; one login can be applied to several
+  servers or copied from a saved one (`POST /api/credentials` with `hosts` / `from`)
 - `source/web/` - dashboard and report (vanilla JS + bundled Chart.js 4.4.4), embedded at build time
 
 ## Build and check (run from `source/`, Go 1.22+)
@@ -39,3 +43,6 @@ Synthetic history for pattern tests: write `data/<host>/YYYY-MM-DD.bin` files di
 - Exes, `data/` and `config.json` are not committed. Publish exes as GitHub Releases.
 - Keep it dependency-free and a single portable exe.
 - `README.txt` ships with CRLF line endings.
+- Credentials are never written anywhere (config, data folder, logs, Credential Manager) and never returned by the
+  API; the password stays out of Go strings and is wiped after use. The credential endpoints accept only loopback
+  requests at localhost with the `X-LagSleuth: 1` header.

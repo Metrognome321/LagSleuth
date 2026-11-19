@@ -68,7 +68,7 @@ One exe. No install, no admin rights, no Python, no database, no internet connec
 - **Top processes**: the busiest applications on each server (CPU as a share of the machine, like Task Manager, plus memory), recorded every 5 seconds. You get a live "top:" line on each card, a CPU-per-process graph with a ranking table, and the busiest process during every incident.
 - **Per-incident metrics**: each incident shows every affected host's worst disk latency, CPU and stolen time.
 - **Show only some servers**: untick hosts on their cards (Ctrl+click = only that one) to filter the ping graph and every metric graph; the summary, time pattern and top processes follow the host you pick. Every graph has a clickable legend.
-- **Credentials for servers you can't read**: enter a user name and password for a server in the dashboard. They're kept in memory only, encrypted while held, and never saved ([details](#credentials-for-a-server-kept-in-memory-only)).
+- **Credentials for servers you can't read**: enter a user name and password once, for one server or many, and reuse a saved login for more servers without retyping it. They're kept in memory only, encrypted while held, and never saved ([details](#credentials-for-a-server-kept-in-memory-only)).
 - **Event logs around incidents**: after an incident, LagSleuth reads the Windows event logs from the monitoring PC and every affected host, from 3 minutes before it started to 3 minutes after it ended (both adjustable). It collects errors and warnings plus events that often explain a stall: clock changes, VSS / snapshots / VMware Tools, scheduled tasks, Windows Update, Storport and Time-Service, and, where Sysmon is installed, every program that started, with what launched it.
 
 ### Reporting

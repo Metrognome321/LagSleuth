@@ -4,13 +4,15 @@
 
 LagSleuth pings any number of hosts every second, learns what "normal" looks like for each one, and flags anything that strays from it. When several hosts go slow together it groups them into one incident, then pulls in the CPU, memory and disk counters and the Windows event logs from those servers, so you can see what was happening at that moment. It was built to track down latency spikes that hit a group of virtual machines at the top of every hour.
 
-One exe. No install, no admin rights, no Python, no database, no internet connection needed. The web dashboard is built in.
+Servers you can ping but not read as yourself? Enter a login for them in the dashboard: it's [kept in memory only](#credentials-for-a-server-kept-in-memory-only), encrypted while held, and never saved.
+
+One exe. No install, no admin rights, no Python, no database, no internet connection, no saved passwords. The web dashboard is built in.
 
 <sub>Formerly called PingWatch. Upgrading from it? Just swap the exe: config and history carry over.</sub>
 
 [**⬇ Download the latest release**](https://github.com/Metrognome321/LagSleuth/releases/latest)
 
-[![LagSleuth in 30 seconds: live ping graph, incidents across hosts, event logs, server metrics, top processes and the hourly time pattern](media/lagsleuth-preview.gif)](https://github.com/Metrognome321/LagSleuth/raw/main/media/lagsleuth-promo.mp4)
+[![LagSleuth in 30 seconds: live ping graph, incidents across hosts, event logs, server metrics, top processes, the hourly time pattern and memory-only server credentials](media/lagsleuth-preview.gif)](https://github.com/Metrognome321/LagSleuth/raw/main/media/lagsleuth-promo.mp4)
 
 ▶ [**Download the 30-second video**](https://github.com/Metrognome321/LagSleuth/raw/main/media/lagsleuth-promo.mp4) (1080p MP4, 12 MB)
 

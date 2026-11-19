@@ -466,8 +466,9 @@ func incidentRoutes(mux *http.ServeMux) {
 				list = append(list, inc)
 			}
 		}
+		lb, la := logWindow()
 		writeJSON(w, map[string]any{"incidents": list, "total": len(all), "finding": incidentPattern(all, start, end),
-			"window_s": incidentWindow(), "start": start, "end": end})
+			"window_s": incidentWindow(), "start": start, "end": end, "log_before_s": lb, "log_after_s": la, "log_settle_s": la + logSettle})
 	})
 
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {

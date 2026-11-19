@@ -144,6 +144,17 @@
   .logbtn { background: none; border: 1px solid var(--axis); border-radius: 6px; color: var(--text-2); font: inherit; font-size: 12px; padding: 2px 8px; cursor: pointer; white-space: nowrap; }
   .logbtn:hover { background: var(--surface-2); color: var(--text); }
   .logbtn.open { border-color: var(--series); color: var(--text); }
+  dialog.cred { background: var(--surface); color: var(--text); border: 1px solid var(--axis); border-radius: 10px; padding: 14px 16px; width: min(520px, 94vw); }
+  dialog.cred::backdrop { background: rgba(0,0,0,.45); }
+  .credHead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .credNote { font-size: 12.5px; color: var(--text-2); margin: 0 0 10px; line-height: 1.45; }
+  .cred label { display: block; font-size: 12px; color: var(--text-2); margin: 8px 0 3px; }
+  .cred input { width: 100%; box-sizing: border-box; font: inherit; padding: 6px 8px; border: 1px solid var(--axis); border-radius: 6px; background: var(--page); color: var(--text); }
+  .cred table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 4px 0 10px; }
+  .cred td { padding: 4px 6px; border-bottom: 1px solid var(--grid); }
+  .cred .msg { font-size: 12.5px; margin-top: 8px; min-height: 1em; }
+  .cred .msg.bad { color: var(--critical); } .cred .msg.ok { color: var(--good); }
+  .credbtn { background: none; border: 0; color: var(--series); font: inherit; font-size: inherit; padding: 0; cursor: pointer; text-decoration: underline; }
   .lpanel { margin-top: 12px; background: #121211; border: 1px solid var(--grid); border-radius: 8px; padding: 10px 14px 14px; }
   .lhead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
   .lhost { margin: 8px 0 4px; font-family: var(--mono); font-size: 12.5px; color: var(--text); display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
@@ -184,8 +195,17 @@
       <button data-m="1440">24h</button><button data-m="10080">7d</button><button data-m="43200">30d</button>
     </div>
     <a class="btn" id="reportBtn" target="_blank">Report</a>
+    <button class="btn" data-cred="" title="Credentials for servers LagSleuth can ping but not read (kept in memory only)">🔑</button>
   </div>
 </header>
+<dialog id="credDlg" class="cred">
+  <form method="dialog" id="credForm" autocomplete="off">
+    <div class="credHead"><b>Server credentials</b><span style="flex:1"></span><button type="button" class="logbtn" id="credClose">✕</button></div>
+    <p class="credNote">For servers LagSleuth can ping but whose event logs or metrics it can't read as the account it runs as.
+      <b>Kept in LagSleuth's memory only</b>, encrypted while held: never saved to disk, never shown again, and gone when LagSleuth is closed.</p>
+    <div id="credBody"></div>
+  </form>
+</dialog>
 
 <main>
   <section class="full targets" id="targets"></section>
@@ -1022,7 +1042,8 @@ async function loadMetrics(force) {
 
 function metricLine(host) {
   const l = met.live[host]; if (!l) return '';
-  if (l.status !== 'ok') return `<div class="mx bad" title="${esc(l.error || '')}">metrics: ${l.status === 'connecting' ? 'connecting…' : l.status === 'no_access' ? 'no access' : 'error'}</div>`;
+  if (l.status !== 'ok') return `<div class="mx bad" title="${esc(l.error || '')}">metrics: ${l.status === 'connecting' ? 'connecting…' : l.status === 'no_access' ? 'no access' : 'error'}` +
+    (l.status === 'connecting' || host === 'local' ? '' : ` · <button class="credbtn" data-cred="${esc(host)}" title="Enter credentials for this server (memory only)">🔑 credentials</button>`) + '</div>';
   const v = l.values || {}, disk = chartVal({ keys: ['disk_read', 'disk_write'] }, v);
   const mem = v.mem_avail == null ? null : v.mem_avail >= 1024 ? `${(v.mem_avail / 1024).toFixed(1)} GB free` : `${Math.round(v.mem_avail)} MB free`;
   const parts = [v.cpu != null ? `CPU ${Math.round(v.cpu)}%` : null, disk != null ? `disk ${fmt(disk)} ms` : null, mem,
@@ -1168,6 +1189,7 @@ async function refreshIncidents() {
   el.className = 'finding ' + f.status;
   el.innerHTML = `<span class="ic" style="color:${f.status === 'pattern' ? C.serious : f.status === 'none' ? css('--good') : C.muted}">${{ pattern: '▲', none: '✔', insufficient: '◌' }[f.status]}</span><span>${esc(f.text)}</span>`;
   const list = d.incidents;
+  if (d.log_before_s) { LOG_BEFORE = d.log_before_s; LOG_AFTER = d.log_after_s; LOG_SETTLE = d.log_settle_s || d.log_after_s; }
   document.getElementById('incSub').textContent = `${list.length} incident${list.length === 1 ? '' : 's'}${inc.minHosts > 1 ? ' hitting 2+ hosts' : ''} · last ${rangeLabel()} · grouped when they start within ${d.window_s}s`;
   document.getElementById('csvIncidents').href = `/api/export/incidents.csv?${q()}&min_hosts=${inc.minHosts}`;
   const live = new Set(Object.keys(view.liveData));
@@ -1235,13 +1257,13 @@ function logCell(i) {
     case 'collected': return `<button class="logbtn${open}" data-log="${i.key}" title="Windows events from this PC and the affected hosts, ${LOG_BEFORE / 60} min before to ${LOG_AFTER / 60} min after">📄 ${s.events} event${s.events === 1 ? '' : 's'}` +
       `${s.warnings ? ` · <span style="color:var(--warning)">⚠ ${s.warnings}</span>` : ''}${s.no_access ? ` · <span style="color:var(--muted)">${s.no_access} no access</span>` : ''}</button>`;
     case 'collecting': return '<span class="tag">collecting…</span>';
-    case 'pending': return `<span class="tag" title="Collected automatically ${LOG_SETTLE} s after the incident ends">after it ends</span>`;
+    case 'pending': return `<span class="tag" title="Collected automatically about ${Math.round(LOG_SETTLE / 60 * 10) / 10} min after the incident ends">after it ends</span>`;
     case 'not_needed': return `<button class="logbtn" data-collect="${i.key}" title="Short single-host blips are not collected automatically">Collect</button>`;
     case 'off': return '<span class="tag" title="event_logs is false in config.json">off</span>';
   }
   return '';
 }
-const LOG_BEFORE = 120, LOG_AFTER = 60, LOG_SETTLE = 30;
+let LOG_BEFORE = 180, LOG_AFTER = 180, LOG_SETTLE = 195;   // updated from /api/incidents (event_log_before_s / _after_s)
 const LVL = { 1: ['✖', 'Critical'], 2: ['✖', 'Error'], 3: ['⚠', 'Warning'], 4: ['ℹ', 'Information'], 0: ['ℹ', 'Information'] };
 const shortCh = c => c.replace(/^Microsoft-Windows-/, '').replace(/\/Operational$/, '');
 const offs = s => (s < 0 ? '−' : '+') + (Math.abs(s) < 60 ? `${Math.abs(s).toFixed(Math.abs(s) < 10 ? 1 : 0)}s` : `${Math.floor(Math.abs(s) / 60)}m${String(Math.round(Math.abs(s) % 60)).padStart(2, '0')}s`);
@@ -1260,7 +1282,8 @@ function logDetail(i) {
     const ih = h.host ? i.hosts.find(x => x.target === h.host) : null, tps = h.host ? ih && ih.top_procs : i.local_top_procs;
     const procTxt = tps && tps.length ? `<span class="st" title="Busiest processes during the incident (share of the whole machine)">· busiest: ${tps.map(p => `${esc(p.name)} ${Math.round(p.max_cpu)}%`).join(', ')}</span>` : '';
     html += `<div class="lhost">${esc(h.label)}${comp} ${st} ${skipped} ${procTxt}</div>`;
-    if (h.status === 'no_access' && h.host) html += `<div class="tag" style="margin:0 0 6px">To allow this: add the account LagSleuth runs as to "Event Log Readers" on ${esc(h.host)} and enable the "Remote Event Log Management" firewall rule there.</div>`;
+    if (h.status === 'no_access' && h.host) html += `<div class="tag" style="margin:0 0 6px">To allow this: add the account LagSleuth runs as to "Event Log Readers" on ${esc(h.host)} and enable the "Remote Event Log Management" firewall rule there,
+      or <button class="credbtn" data-cred="${esc(h.host)}">🔑 enter credentials for ${esc(h.host)}</button> (kept in memory only), then ↻ Collect again.</div>`;
     if (!h.events.length) continue;
     html += '<table class="levs">' + h.events.map((e, n) => {
       const inside = e.ts >= i.start_ts - 2 && e.ts <= i.end_ts + 2;
@@ -1479,6 +1502,57 @@ setInterval(pollLive, 1000);
 window.addEventListener('resize', () => view.data && renderGraph());
 setInterval(refreshStats, 5000);
 setInterval(refreshPattern, 30000);
+
+/* ---------------- server credentials (memory only, this PC only) ---------------- */
+const credDlg = document.getElementById('credDlg'), credBody = document.getElementById('credBody');
+const onThisPC = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(location.hostname);
+const credFetch = (url, opts = {}) => fetch(url, { ...opts, headers: { 'X-LagSleuth': '1', 'Content-Type': 'application/json', ...(opts.headers || {}) } });
+async function openCred(host) {
+  if (!onThisPC) {
+    credBody.innerHTML = `<p class="msg bad">For safety, credentials can only be entered in a browser on the PC running LagSleuth.
+      Open <b>http://localhost:${esc(location.port || '80')}</b> there.</p>`;
+    return credDlg.showModal();
+  }
+  let list = [];
+  try { const r = await credFetch('/api/credentials'); list = r.ok ? await r.json() : []; } catch {}
+  const targets = Object.keys(view.liveData || {});
+  credBody.innerHTML = (list.length ? `<table>${list.map(c => `<tr><td class="mono">${esc(c.host)}</td><td>${esc(c.user)}</td>
+      <td style="text-align:right"><button type="button" class="logbtn" data-credrm="${esc(c.host)}">Remove</button></td></tr>`).join('')}</table>` : '') +
+    `<label for="credHost">Server</label><input id="credHost" list="credHosts" value="${esc(host || '')}" placeholder="172.17.220.100" spellcheck="false">
+     <datalist id="credHosts">${targets.map(t => `<option value="${esc(t)}">`).join('')}</datalist>
+     <label for="credUser">User name</label><input id="credUser" placeholder="DOMAIN\\user, SERVER\\user or user@domain" spellcheck="false" autocomplete="off">
+     <label for="credPass">Password</label><input id="credPass" type="password" autocomplete="new-password">
+     <div style="display:flex;gap:8px;margin-top:12px"><span style="flex:1"></span><button type="button" class="btn" id="credSave">Save in memory</button></div>
+     <div class="msg" id="credMsg"></div>`;
+  credDlg.showModal();
+  document.getElementById(host ? 'credUser' : 'credHost').focus();
+}
+async function saveCred() {
+  const h = document.getElementById('credHost'), u = document.getElementById('credUser'), p = document.getElementById('credPass'), m = document.getElementById('credMsg');
+  if (!h.value.trim() || !u.value.trim() || !p.value) { m.className = 'msg bad'; m.textContent = 'Enter a server, a user name and a password.'; return; }
+  const body = JSON.stringify({ host: h.value.trim(), user: u.value.trim(), password: p.value });
+  p.value = '';   // never left in the page
+  m.className = 'msg'; m.textContent = 'Saving and testing…';
+  try {
+    const r = await credFetch('/api/credentials', { method: 'POST', body }), d = await r.json();
+    if (!r.ok) { m.className = 'msg bad'; m.textContent = d.error || 'Failed'; return; }
+    const host = d.host;
+    await openCred('');
+    const m2 = document.getElementById('credMsg');
+    m2.className = d.event_logs === 'ok' ? 'msg ok' : 'msg bad';
+    m2.textContent = `Saved for ${host} (memory only). Event logs: ${d.event_logs === 'ok' ? 'readable' : d.event_logs}. Metrics reconnect within a few seconds.`;
+  } catch (e) { m.className = 'msg bad'; m.textContent = String(e); }
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-cred]');
+  if (b) { e.preventDefault(); return openCred(b.dataset.cred); }
+  const rm = e.target.closest('[data-credrm]');
+  if (rm) { await credFetch('/api/credentials/' + encodeURIComponent(rm.dataset.credrm), { method: 'DELETE' }); return openCred(''); }
+  if (e.target.id === 'credSave') return saveCred();
+  if (e.target.id === 'credClose') credDlg.close();
+});
+document.getElementById('credForm').addEventListener('submit', e => { e.preventDefault(); saveCred(); });
+credDlg.addEventListener('close', () => { const p = document.getElementById('credPass'); if (p) p.value = ''; credBody.innerHTML = ''; });
 </script>
 </body>
 </html>

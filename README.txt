@@ -163,6 +163,17 @@ EVENT LOGS AROUND INCIDENTS
     "not readable" and the rest are still collected.
   - Set "event_logs": false in config.json to turn this off.
 
+CREDENTIALS FOR A SERVER (MEMORY ONLY)
+  For a server you can ping but not read, click the key button in the top
+  bar (or "credentials" next to "no access") and enter a user name
+  (DOMAIN\user, SERVER\user or user@domain) and password. They are used for
+  that server's event logs and metrics.
+  - Never stored: not in config.json, the data folder, Windows Credential
+    Manager or any log. Closing LagSleuth wipes them.
+  - The password is kept encrypted in memory, is never shown again and never
+    appears on a command line.
+  - Can only be entered on the PC running LagSleuth, at http://localhost:5055.
+
 MONITOR SELF-CHECK
   The badge in the header checks that LagSleuth itself kept running on time.
   If the LagSleuth machine is paused for more than 250 ms (busy, frozen VM,

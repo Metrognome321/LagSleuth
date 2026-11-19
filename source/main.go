@@ -1286,6 +1286,7 @@ func routes() *http.ServeMux {
 	eventLogRoutes(mux)
 	metricRoutes(mux)
 	processRoutes(mux)
+	credRoutes(mux)
 
 	mux.HandleFunc("POST /api/targets", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -1529,6 +1530,7 @@ func main() {
 	go housekeeping()
 	go stallWatch()
 	go logCollector()
+	clearCredsOnExit()
 	go metricsManager()
 	go metricsHousekeeping()
 

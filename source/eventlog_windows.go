@@ -20,6 +20,9 @@ func queryEvents(host string, ch LogChannel, from, to float64, max int) ([]LogEv
 	if simulate {
 		return simEvents(host, ch, from, to), nil
 	}
+	if host != "" && hasCred(host) { // credentials entered for this server: Windows API, password never on a command line
+		return queryEventsWithCred(host, ch, from, to, max)
+	}
 	args := []string{"qe", ch.Name, "/q:" + logQuery(ch, from, to), "/f:RenderedXml", "/e:Events", "/c:" + strconv.Itoa(max)}
 	if host != "" {
 		args = append(args, "/r:"+host)

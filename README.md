@@ -109,6 +109,16 @@ LagSleuth reads remote servers **as the Windows account it runs as**, with no st
 
 Servers LagSleuth can't read show **"no access"** with the reason, and are retried automatically. Public addresses (such as `8.8.8.8`) are never queried. If the servers are in a different domain that doesn't trust yours, use an account from that domain.
 
+### Credentials for a server (kept in memory only)
+
+For a server you can ping but not read (another domain, off the domain, a different admin account), click **🔑** in the top bar, or **🔑 credentials** next to "no access", and enter a user name (`DOMAIN\user`, `SERVER\user` or `user@domain`) and password. LagSleuth tests them on the server's System log straight away, and metrics reconnect with them within seconds.
+
+- **Never stored:** not in `config.json`, the data folder, Windows Credential Manager or any log. Closing LagSleuth wipes them; enter them again after a restart.
+- **Encrypted while held:** the password stays encrypted in memory (Windows memory encryption, only this process can decrypt it) and is decrypted only for the moment it is handed to Windows to log on, then wiped.
+- **Never on a command line**, where process logging such as Sysmon would record it: event logs are read through the Windows event log API and metrics through a network-only logon (like `runas /netonly`).
+- **Never shown again:** the dashboard lists which servers have credentials and the user name, never the password.
+- **Only from this PC:** credentials can be entered or removed only in a browser on the PC running LagSleuth, at `http://localhost:5055`, so they never cross the network.
+
 ---
 
 ## Configuration

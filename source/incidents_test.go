@@ -2,12 +2,14 @@ package main
 
 import (
 	"math"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf16"
 )
 
 // setupSynthetic writes 6 hours of samples for four targets and an hourly incident at :00 that hits
@@ -255,5 +257,66 @@ func TestParseSysmonProcessCreate(t *testing.T) {
 	defer func() { cfgMu.Lock(); cfg = old; cfgMu.Unlock() }()
 	if b, a := logWindow(); b != 180 || a != 90 {
 		t.Errorf("logWindow = %v, %v; want 180 (default), 90", b, a)
+	}
+}
+
+func TestCredHelpers(t *testing.T) {
+	pw, err := jsonStringUTF16([]byte(`"päss\"w\\rd€😀"`))
+	if err != nil || string(utf16.Decode(pw)) != "päss\"w\\rd€😀" {
+		t.Fatalf("jsonStringUTF16 = %q, %v", string(utf16.Decode(pw)), err)
+	}
+	if _, err := jsonStringUTF16([]byte(`123`)); err == nil {
+		t.Error("non-string password accepted")
+	}
+	if u, d := splitUser(`CORP\svc-mon`); u != "svc-mon" || d != "CORP" { // raw string: one backslash
+		t.Errorf("splitUser DOMAIN\name = %q %q", u, d)
+	}
+	if u, d := splitUser("svc@corp.example"); u != "svc@corp.example" || d != "" {
+		t.Errorf("splitUser upn = %q %q", u, d)
+	}
+}
+
+func TestCredRoutesLocalOnly(t *testing.T) {
+	mux := http.NewServeMux()
+	credRoutes(mux)
+	post := func(remote, host, hdr, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "http://"+host+"/api/credentials", strings.NewReader(body))
+		r.RemoteAddr = remote
+		if hdr != "" {
+			r.Header.Set("X-LagSleuth", hdr)
+		}
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+		return w
+	}
+	body := `{"host":"10.20.30.11","user":"CORP\\svc","password":"secret-pw"}`
+	if w := post("10.20.30.5:5000", "10.20.30.1:5055", "1", body); w.Code != 403 {
+		t.Errorf("remote browser allowed: %d", w.Code)
+	}
+	if w := post("127.0.0.1:5000", "evil.example:5055", "1", body); w.Code != 403 {
+		t.Errorf("foreign Host header (DNS rebinding) allowed: %d", w.Code)
+	}
+	if w := post("127.0.0.1:5000", "localhost:5055", "", body); w.Code != 403 {
+		t.Errorf("request without the page header allowed: %d", w.Code)
+	}
+	simulate = true
+	defer func() { simulate = false; clearCreds() }()
+	w := post("127.0.0.1:5000", "localhost:5055", "1", body)
+	if w.Code != 200 || !hasCred("10.20.30.11") {
+		t.Fatalf("local request refused: %d %s", w.Code, w.Body.String())
+	}
+	r := httptest.NewRequest("GET", "http://localhost:5055/api/credentials", nil)
+	r.RemoteAddr, r.Header = "[::1]:5000", http.Header{"X-Lagsleuth": {"1"}}
+	lw := httptest.NewRecorder()
+	mux.ServeHTTP(lw, r)
+	if strings.Contains(lw.Body.String()+w.Body.String(), "secret-pw") {
+		t.Fatal("password returned by the API")
+	}
+	if !strings.Contains(lw.Body.String(), `"user":"CORP\\svc"`) {
+		t.Errorf("list wrong: %s", lw.Body.String())
+	}
+	removeCred("10.20.30.11")
+	if hasCred("10.20.30.11") {
+		t.Error("credentials not removed")
 	}
 }

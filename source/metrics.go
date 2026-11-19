@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -287,8 +288,12 @@ func (c *metricCollector) set(f func(l *metricLive)) {
 }
 
 func (c *metricCollector) run() {
+	// one OS thread per collector: with credentials entered for this host, the thread impersonates their
+	// network-only logon token (see credThreadSetup). The thread ends with the collector, token and all.
+	runtime.LockOSThread()
 	defer mstore.close(c.host)
 	for {
+		ver := credThreadSetup(c.host)
 		src, err := openCounters(c.host)
 		if err != nil {
 			status := "error"
@@ -296,10 +301,8 @@ func (c *metricCollector) run() {
 				status = "no_access"
 			}
 			c.set(func(l *metricLive) { l.Status, l.Error = status, err.Error() })
-			select { // retry later; a host that refuses us should not be hammered
-			case <-c.stop:
+			if !c.sleepOrCredChange(time.Minute, ver) { // retry later; a host that refuses us should not be hammered
 				return
-			case <-time.After(time.Minute):
 			}
 			continue
 		}
@@ -318,6 +321,11 @@ func (c *metricCollector) run() {
 				}
 			} else {
 				next = time.Now() // fell behind (slow host): do not try to catch up
+			}
+			if credVersion(c.host) != ver { // credentials entered or removed: reconnect with them
+				src.close()
+				c.set(func(l *metricLive) { l.Status, l.Error = "connecting", "" })
+				break
 			}
 			ts := float64(time.Now().UnixNano()) / 1e9
 			vals, err := src.collect()
@@ -343,6 +351,22 @@ func (c *metricCollector) run() {
 			}
 		}
 	}
+}
+
+// sleepOrCredChange waits up to d, returning early (true) if the host's credentials change; false = stopped.
+func (c *metricCollector) sleepOrCredChange(d time.Duration, ver int) bool {
+	end := time.Now().Add(d)
+	for time.Now().Before(end) {
+		select {
+		case <-c.stop:
+			return false
+		case <-time.After(2 * time.Second):
+		}
+		if credVersion(c.host) != ver {
+			return true
+		}
+	}
+	return true
 }
 
 // counterSource is a connected set of counters for one machine (PDH on Windows, simulated otherwise).

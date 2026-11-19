@@ -350,6 +350,13 @@ function legendClick(e, label) {
     if (shown.length === 1 && shown[0] === label) hosts.forEach(h => view.hidden.delete(h));
     else hosts.forEach(h => h === label ? view.hidden.delete(h) : view.hidden.add(h));
   }
+  if (hosts.includes(label)) {   // the card selection follows the host picked in the legend
+    const shown = hosts.filter(h => !view.hidden.has(h));
+    if (shown.length === 1) selectCard(shown[0]);
+    else if (!view.hidden.has(label) && (e.ctrlKey || e.metaKey || e.shiftKey)) selectCard(label);
+    else if (view.hidden.has(state.target) && shown.length) selectCard(shown[0]);
+    renderTargets(view.liveData);
+  }
   saveHidden();
   renderGraph();
   loadMetrics(true);
@@ -1068,8 +1075,11 @@ const PCOL = ['#e66767', '#3987e5', '#c98500', '#199e70', '#9085e9', '#d55181', 
 const procs = { host: '', last: 0, reqId: 0, hidden: new Set(), chart: null };
 function procHost() {
   if (procs.host) return procs.host;
+  // the selected card's server whenever it has (or tries to have) metrics, even if they are failing right now:
+  // its history may still have samples, and the panel says why it has none. Only hosts never queried
+  // (such as public addresses) fall back to this PC.
   const t = state.target;
-  return t && met.live[t] && met.live[t].status === 'ok' ? t : 'local';
+  return t && met.live[t] ? t : 'local';
 }
 function fillProcHosts() {
   const sel = document.getElementById('procHost');
@@ -1370,9 +1380,25 @@ document.getElementById('liveScope').addEventListener('click', e => {
 
 // tick boxes on the host cards: show / hide a host on the ping graph, metric graphs and top processes.
 // Handled on pointerdown so a click is never lost to the cards being redrawn every second.
-function setHostShown(host, shown) {
+// select a host's card: summary, time pattern, top processes (and the one-host graph) follow it
+function selectCard(t) {
+  if (!t || t === state.target || !view.liveData[t]) return false;
+  state.target = t; refreshStats(); refreshPattern(); refreshProcs(true);
+  if (state.liveScope !== 'all') loadGraph();
+  return true;
+}
+// after hosts are ticked / unticked: a host just ticked (or the only one left) gets the card selection,
+// and the selection never stays on a host that is now hidden
+function followShown(host, shown) {
+  const shownHosts = Object.keys(view.liveData).filter(h => !view.hidden.has(h));
+  if (shown && !view.hidden.has(host)) selectCard(host);
+  else if (shownHosts.length === 1) selectCard(shownHosts[0]);
+  else if (view.hidden.has(state.target) && shownHosts.length) selectCard(shownHosts[0]);
+}
+function setHostShown(host, shown, keepSelection) {
   shown ? view.hidden.delete(host) : view.hidden.add(host);
   saveHidden();
+  if (!keepSelection) followShown(host, shown);
   if (state.liveScope !== 'all') { state.liveScope = 'all'; document.querySelectorAll('#liveScope button').forEach(x => x.classList.toggle('on', x.dataset.v === 'all')); loadGraph(); }
   else renderGraph();
   renderTargets(view.liveData);
@@ -1388,7 +1414,7 @@ document.getElementById('targets').addEventListener('pointerdown', e => {
   }
   setHostShown(p.dataset.pick, view.hidden.has(p.dataset.pick));
 });
-function showAllHosts() { Object.keys(view.liveData).forEach(h => view.hidden.delete(h)); view.hidden.delete('This PC'); setHostShown(Object.keys(view.liveData)[0], true); }
+function showAllHosts() { Object.keys(view.liveData).forEach(h => view.hidden.delete(h)); view.hidden.delete('This PC'); setHostShown(Object.keys(view.liveData)[0], true, true); }
 document.addEventListener('click', e => { if (e.target.closest('[data-showall]')) { e.preventDefault(); showAllHosts(); } });
 document.getElementById('targets').addEventListener('click', async e => {
   if (e.target.closest('[data-pick]')) return;

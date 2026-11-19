@@ -1553,6 +1553,7 @@ document.addEventListener('click', async e => {
 });
 document.getElementById('credForm').addEventListener('submit', e => { e.preventDefault(); saveCred(); });
 credDlg.addEventListener('close', () => { const p = document.getElementById('credPass'); if (p) p.value = ''; credBody.innerHTML = ''; });
+{ const cq = new URLSearchParams(location.search).get('cred'); if (cq !== null) setTimeout(() => openCred(cq), 1200); }   // ?cred=<host> opens the dialog
 </script>
 </body>
 </html>

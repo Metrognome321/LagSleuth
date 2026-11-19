@@ -32,15 +32,15 @@ One exe. No install, no admin rights, no Python, no database, no internet connec
 
 ![Top processes panel: CPU per process over 30 minutes with a spike from VSSVC and vmtoolsd at the top of the hour, and a ranking table](screenshots/processes.png)
 
-**Incidents across hosts:** one row per incident, with the hosts hit, the hosts that stayed normal, server metrics, the busiest process, and the Windows event logs from around that moment.
+**Incidents across hosts:** one row per incident, with the hosts hit, the hosts that stayed normal, server metrics, the busiest process, and the Windows event logs from 3 minutes either side, including (with Sysmon) the program that started at that second.
 
-![Incidents table with an expanded event log panel showing shadow copy, VMware Tools and disk retry events on each affected host](screenshots/incidents.png)
+![Incidents table with an expanded event log panel showing, on each affected host, a backup agent started by Sysmon at the stall, then shadow copy, VMware Tools and disk retry events](screenshots/incidents.png)
 
 **Time pattern:** spots problems that come back at the same minute every hour.
 
 ![Time pattern panel: by-minute chart and hour-by-minute heatmap showing high ping recurring at :00 past the hour](screenshots/pattern.png)
 
-**Report:** a printable report for any period, exportable to PDF.
+**Report:** a printable report for any period and for all hosts or the ones you pick, exportable to PDF.
 
 ![Printable report with summary, ping graph and server metric graphs over 8 hours, and the incidents table](screenshots/report.png)
 
@@ -65,7 +65,8 @@ One exe. No install, no admin rights, no Python, no database, no internet connec
 - **Live server metrics, every second** (adjustable from 1 to 60 s on the dashboard): CPU, CPU queue, **CPU stolen** (VMware: time the host made the VM wait), memory available / committed / paging / ballooned, **disk read and write latency**, disk queue and IOPS. They're shown on the host cards and in collapsible graphs on the same timeline as the ping graph.
 - **Top processes**: the busiest applications on each server (CPU as a share of the machine, like Task Manager, plus memory), recorded every 5 seconds. You get a live "top:" line on each card, a CPU-per-process graph with a ranking table, and the busiest process during every incident.
 - **Per-incident metrics**: each incident shows every affected host's worst disk latency, CPU and stolen time.
-- **Show only some servers**: untick hosts on their cards (Ctrl+click = only that one) to filter the ping graph and every metric graph. Every graph has a clickable legend.
+- **Show only some servers**: untick hosts on their cards (Ctrl+click = only that one) to filter the ping graph and every metric graph; the summary, time pattern and top processes follow the host you pick. Every graph has a clickable legend.
+- **Credentials for servers you can't read**: enter a user name and password for a server in the dashboard. They're kept in memory only, encrypted while held, and never saved ([details](#credentials-for-a-server-kept-in-memory-only)).
 - **Event logs around incidents**: after an incident, LagSleuth reads the Windows event logs from the monitoring PC and every affected host, from 3 minutes before it started to 3 minutes after it ended (both adjustable). It collects errors and warnings plus events that often explain a stall: clock changes, VSS / snapshots / VMware Tools, scheduled tasks, Windows Update, Storport and Time-Service, and, where Sysmon is installed, every program that started, with what launched it.
 
 ### Reporting
@@ -100,18 +101,21 @@ The exes aren't code-signed, so SmartScreen warns on first run: click **More inf
 
 ## Reading metrics and event logs from other servers
 
-LagSleuth reads remote servers **as the Windows account it runs as**, with no stored passwords. If you start it while logged in with your domain account, it uses your account. On each server you want data from:
+LagSleuth reads remote servers **as the Windows account it runs as** (or with [credentials you enter](#credentials-for-a-server-kept-in-memory-only), kept in memory only). If you start it while logged in with your domain account, it uses your account. On each server you want data from:
 
 | For | Needs on that server |
 |---|---|
 | **Server metrics** | The account in **Performance Monitor Users** (or an admin), the **Remote Registry** service running, the **File and Printer Sharing** firewall rule allowed |
 | **Event logs** | The account in **Event Log Readers** (or an admin), the **Remote Event Log Management** firewall rule allowed |
+| **Sysmon process starts** | Sysmon installed; reading its log usually needs an **admin** account on that server |
 
 Servers LagSleuth can't read show **"no access"** with the reason, and are retried automatically. Public addresses (such as `8.8.8.8`) are never queried. If the servers are in a different domain that doesn't trust yours, use an account from that domain.
 
 ### Credentials for a server (kept in memory only)
 
 For a server you can ping but not read (another domain, off the domain, a different admin account), click **🔑** in the top bar, or **🔑 credentials** next to "no access", and enter a user name (`DOMAIN\user`, `SERVER\user` or `user@domain`) and password. LagSleuth tests them on the server's System log straight away, and metrics reconnect with them within seconds.
+
+![Server credentials dialog: one saved entry showing server and user name only, and a form with server, user name and password, saved in memory](screenshots/credentials.png)
 
 - **Never stored:** not in `config.json`, the data folder, Windows Credential Manager or any log. Closing LagSleuth wipes them; enter them again after a restart.
 - **Encrypted while held:** the password stays encrypted in memory (Windows memory encryption, only this process can decrypt it) and is decrypted only for the moment it is handed to Windows to log on, then wiped.
@@ -179,6 +183,7 @@ LAGSLEUTH_SIMULATE=1 go run . -no-browser -port 5077 -data /tmp/pwtest
 | `metrics.go`, `metrics_windows.go` | Performance counters (pdh.dll), storage, API |
 | `processes.go` | Top processes per machine: sampling, history, API |
 | `eventlog.go`, `eventlog_windows.go` | Event log collection (wevtutil) and API |
+| `creds.go`, `creds_windows.go` | Server credentials in memory: encryption, network-only logon, event log API, HTTP routes |
 | `ping_windows.go` | Native ICMP via iphlpapi.dll `IcmpSendEcho` |
 | `*_other.go` | Non-Windows fallbacks (testing only) |
 | `web/index.html`, `web/report.html` | Dashboard and report (vanilla JS + bundled Chart.js 4.4.4) |

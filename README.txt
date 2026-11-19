@@ -168,6 +168,9 @@ CREDENTIALS FOR A SERVER (MEMORY ONLY)
   bar (or "credentials" next to "no access") and enter a user name
   (DOMAIN\user, SERVER\user or user@domain) and password. They are used for
   that server's event logs and metrics.
+  - One login, many servers: tick every server it is for and enter it once.
+    A saved login appears under Login as "(saved)": pick it, tick more
+    servers and save, with no need to type the password again.
   - Never stored: not in config.json, the data folder, Windows Credential
     Manager or any log. Closing LagSleuth wipes them.
   - The password is kept encrypted in memory, is never shown again and never

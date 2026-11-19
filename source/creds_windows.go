@@ -104,6 +104,20 @@ func (s *secret) withPassword(f func(pw *uint16)) error {
 	return nil
 }
 
+// withPasswordUTF16 is withPassword with the password as a slice (without the trailing NUL); the slice is
+// wiped as soon as f returns, so f must copy anything it keeps.
+func (s *secret) withPasswordUTF16(f func(pw []uint16)) error {
+	return s.withPassword(func(p *uint16) {
+		n := len(s.enc) / 2
+		all := unsafe.Slice(p, n)
+		end := 0
+		for end < n && all[end] != 0 {
+			end++
+		}
+		f(all[:end])
+	})
+}
+
 // credThreadSetup runs on a collector's locked OS thread before it connects: with credentials for the host,
 // the thread impersonates their network-only token, so PDH's remote connection uses them; otherwise it uses
 // LagSleuth's own account. Returns the credentials version it set up for.

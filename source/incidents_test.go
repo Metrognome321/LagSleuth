@@ -315,6 +315,22 @@ func TestCredRoutesLocalOnly(t *testing.T) {
 	if !strings.Contains(lw.Body.String(), `"user":"CORP\\svc"`) {
 		t.Errorf("list wrong: %s", lw.Body.String())
 	}
+	// one new login for several servers at once
+	w = post("127.0.0.1:5000", "localhost:5055", "1", `{"hosts":["10.20.30.12"," 10.20.30.13","10.20.30.12"],"user":"CORP\\other","password":"pw2"}`)
+	if w.Code != 200 || !hasCred("10.20.30.12") || !hasCred("10.20.30.13") || strings.Count(w.Body.String(), `"host"`) != 2 {
+		t.Fatalf("multi-host save: %d %s", w.Code, w.Body.String())
+	}
+	// reuse the login saved for .11 on two more servers, without sending the password
+	w = post("127.0.0.1:5000", "localhost:5055", "1", `{"hosts":["10.20.30.14","10.20.30.13"],"from":"10.20.30.11"}`)
+	if w.Code != 200 || credUser("10.20.30.14") != `CORP\svc` || credUser("10.20.30.13") != `CORP\svc` || strings.Contains(w.Body.String(), "secret-pw") {
+		t.Fatalf("reuse saved login: %d %s", w.Code, w.Body.String())
+	}
+	if w := post("127.0.0.1:5000", "localhost:5055", "1", `{"hosts":["10.20.30.15"],"from":"10.20.30.99"}`); w.Code != 400 || hasCred("10.20.30.15") {
+		t.Errorf("reuse from a server without a login: %d", w.Code)
+	}
+	if w := post("127.0.0.1:5000", "localhost:5055", "1", `{"hosts":[],"user":"x","password":"y"}`); w.Code != 400 {
+		t.Errorf("no servers accepted: %d", w.Code)
+	}
 	removeCred("10.20.30.11")
 	if hasCred("10.20.30.11") {
 		t.Error("credentials not removed")

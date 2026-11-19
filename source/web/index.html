@@ -154,6 +154,12 @@
   .cred td { padding: 4px 6px; border-bottom: 1px solid var(--grid); }
   .cred .msg { font-size: 12.5px; margin-top: 8px; min-height: 1em; }
   .cred .msg.bad { color: var(--critical); } .cred .msg.ok { color: var(--good); }
+  .cred select { width: 100%; font: inherit; padding: 6px 8px; border: 1px solid var(--axis); border-radius: 6px; background: var(--page); color: var(--text); }
+  .credHosts { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 2px 10px; max-height: 180px; overflow: auto; border: 1px solid var(--grid); border-radius: 6px; padding: 6px 8px; }
+  .credHosts label { display: flex; align-items: baseline; gap: 6px; margin: 0; font-size: 13px; color: var(--text); cursor: pointer; flex-wrap: wrap; }
+  .credHosts input { width: auto; padding: 0; }
+  .credHosts small { flex-basis: 100%; padding-left: 20px; color: var(--text-2); font-size: 11px; margin-top: -2px; }
+  .credPicks { font-size: 12px; color: var(--text-2); margin-top: 4px; }
   .credbtn { background: none; border: 0; color: var(--series); font: inherit; font-size: inherit; padding: 0; cursor: pointer; text-decoration: underline; }
   .lpanel { margin-top: 12px; background: #121211; border: 1px solid var(--grid); border-radius: 8px; padding: 10px 14px 14px; }
   .lhead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
@@ -1515,32 +1521,54 @@ async function openCred(host) {
   }
   let list = [];
   try { const r = await credFetch('/api/credentials'); list = r.ok ? await r.json() : []; } catch {}
-  const targets = Object.keys(view.liveData || {});
+  const has = Object.fromEntries(list.map(c => [c.host, c.user]));
+  const targets = Object.keys(view.liveData || {}).filter(t => t !== 'local');
+  if (host && !targets.includes(host)) targets.unshift(host);
+  // one entry per saved login (user name), pointing at a server it is saved for, so it can be copied to others
+  const logins = [];
+  for (const c of list) if (!logins.some(l => l.user.toLowerCase() === c.user.toLowerCase())) logins.push(c);
+  const pick = host ? new Set([host]) : new Set();
   credBody.innerHTML = (list.length ? `<table>${list.map(c => `<tr><td class="mono">${esc(c.host)}</td><td>${esc(c.user)}</td>
       <td style="text-align:right"><button type="button" class="logbtn" data-credrm="${esc(c.host)}">Remove</button></td></tr>`).join('')}</table>` : '') +
-    `<label for="credHost">Server</label><input id="credHost" list="credHosts" value="${esc(host || '')}" placeholder="172.17.220.100" spellcheck="false">
-     <datalist id="credHosts">${targets.map(t => `<option value="${esc(t)}">`).join('')}</datalist>
-     <label for="credUser">User name</label><input id="credUser" placeholder="DOMAIN\\user, SERVER\\user or user@domain" spellcheck="false" autocomplete="off">
-     <label for="credPass">Password</label><input id="credPass" type="password" autocomplete="new-password">
+    `<label for="credLogin">Login</label>
+     <select id="credLogin">${logins.map(l => `<option value="${esc(l.host)}">${esc(l.user)} (saved)</option>`).join('')}<option value="">A new login…</option></select>
+     <div id="credNew">
+       <label for="credUser">User name</label><input id="credUser" placeholder="DOMAIN\\user, SERVER\\user or user@domain" spellcheck="false" autocomplete="off">
+       <label for="credPass">Password</label><input id="credPass" type="password" autocomplete="new-password">
+     </div>
+     <label>Use it for these servers</label>
+     <div class="credHosts">${targets.map(t => `<label><input type="checkbox" value="${esc(t)}"${pick.has(t) ? ' checked' : ''}>
+        <span class="mono">${esc(t)}</span>${has[t] ? `<small>${esc(has[t])}</small>` : ''}</label>`).join('') || '<span class="credNote">No servers monitored yet.</span>'}</div>
+     <div class="credPicks"><button type="button" class="credbtn" id="credAll">all</button> · <button type="button" class="credbtn" id="credNoLogin">all without a login</button> · <button type="button" class="credbtn" id="credNone">none</button></div>
+     <label for="credMore">Other servers (optional, comma-separated)</label><input id="credMore" placeholder="172.17.220.120, server2" spellcheck="false">
      <div style="display:flex;gap:8px;margin-top:12px"><span style="flex:1"></span><button type="button" class="btn" id="credSave">Save in memory</button></div>
      <div class="msg" id="credMsg"></div>`;
+  const sel = document.getElementById('credLogin'), showNew = () => document.getElementById('credNew').hidden = sel.value !== '';
+  sel.addEventListener('change', showNew); showNew();
   credDlg.showModal();
-  document.getElementById(host ? 'credUser' : 'credHost').focus();
+  (sel.value === '' ? document.getElementById('credUser') : sel).focus();
 }
+function credTick(fn) { credBody.querySelectorAll('.credHosts input').forEach(b => b.checked = fn(b)); }
 async function saveCred() {
-  const h = document.getElementById('credHost'), u = document.getElementById('credUser'), p = document.getElementById('credPass'), m = document.getElementById('credMsg');
-  if (!h.value.trim() || !u.value.trim() || !p.value) { m.className = 'msg bad'; m.textContent = 'Enter a server, a user name and a password.'; return; }
-  const body = JSON.stringify({ host: h.value.trim(), user: u.value.trim(), password: p.value });
-  p.value = '';   // never left in the page
-  m.className = 'msg'; m.textContent = 'Saving and testing…';
+  const sel = document.getElementById('credLogin'), u = document.getElementById('credUser'), p = document.getElementById('credPass'), m = document.getElementById('credMsg');
+  const hosts = [...credBody.querySelectorAll('.credHosts input:checked')].map(b => b.value)
+    .concat(document.getElementById('credMore').value.split(/[,;\s]+/).map(s => s.trim()).filter(Boolean));
+  const req = { hosts };
+  if (sel.value) req.from = sel.value;
+  else { req.user = u.value.trim(); req.password = p.value; }
+  if (!hosts.length) { m.className = 'msg bad'; m.textContent = 'Tick at least one server.'; return; }
+  if (!sel.value && (!req.user || !req.password)) { m.className = 'msg bad'; m.textContent = 'Enter a user name and a password.'; return; }
+  const body = JSON.stringify(req);
+  p.value = ''; delete req.password;   // never left in the page
+  m.className = 'msg'; m.textContent = `Saving and testing ${hosts.length} server${hosts.length > 1 ? 's' : ''}…`;
   try {
     const r = await credFetch('/api/credentials', { method: 'POST', body }), d = await r.json();
-    if (!r.ok) { m.className = 'msg bad'; m.textContent = d.error || 'Failed'; return; }
-    const host = d.host;
+    if (!d.results) { m.className = 'msg bad'; m.textContent = d.error || 'Failed'; return; }
     await openCred('');
-    const m2 = document.getElementById('credMsg');
-    m2.className = d.event_logs === 'ok' ? 'msg ok' : 'msg bad';
-    m2.textContent = `Saved for ${host} (memory only). Event logs: ${d.event_logs === 'ok' ? 'readable' : d.event_logs}. Metrics reconnect within a few seconds.`;
+    const m2 = document.getElementById('credMsg'), ok = d.results.every(x => x.event_logs === 'ok');
+    m2.className = ok ? 'msg ok' : 'msg bad';
+    m2.innerHTML = `Saved ${esc(d.user || '')} in memory. Metrics reconnect within a few seconds.<br>` + d.results.map(x =>
+      `<span class="mono">${esc(x.host)}</span>: ${x.error ? 'not saved, ' + esc(x.error) : x.event_logs === 'ok' ? 'event logs readable' : 'event logs ' + esc(x.event_logs || '')}`).join('<br>');
   } catch (e) { m.className = 'msg bad'; m.textContent = String(e); }
 }
 document.addEventListener('click', async e => {
@@ -1549,6 +1577,9 @@ document.addEventListener('click', async e => {
   const rm = e.target.closest('[data-credrm]');
   if (rm) { await credFetch('/api/credentials/' + encodeURIComponent(rm.dataset.credrm), { method: 'DELETE' }); return openCred(''); }
   if (e.target.id === 'credSave') return saveCred();
+  if (e.target.id === 'credAll') return credTick(() => true);
+  if (e.target.id === 'credNone') return credTick(() => false);
+  if (e.target.id === 'credNoLogin') return credTick(b => !b.closest('label').querySelector('small'));
   if (e.target.id === 'credClose') credDlg.close();
 });
 document.getElementById('credForm').addEventListener('submit', e => { e.preventDefault(); saveCred(); });

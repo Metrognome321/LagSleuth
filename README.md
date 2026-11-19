@@ -117,7 +117,9 @@ Servers LagSleuth can't read show **"no access"** with the reason, and are retri
 
 For a server you can ping but not read (another domain, off the domain, a different admin account), click **🔑** in the top bar, or **🔑 credentials** next to "no access", and enter a user name (`DOMAIN\user`, `SERVER\user` or `user@domain`) and password. LagSleuth tests them on the server's System log straight away, and metrics reconnect with them within seconds.
 
-![Server credentials dialog: one saved entry showing server and user name only, and a form with server, user name and password, saved in memory](screenshots/credentials.png)
+**One login, many servers:** tick every server the login is for (or click *all without a login*) and enter it once. Once a login is saved, it shows under **Login** as *(saved)*: pick it, tick more servers, and save. You don't type the password again: LagSleuth copies the login in its own memory, and it is never sent back to the browser.
+
+![Server credentials dialog: one saved login showing server and user name only, the saved login picked under Login, and a tick-list of servers to use it for](screenshots/credentials.png)
 
 - **Never stored:** not in `config.json`, the data folder, Windows Credential Manager or any log. Closing LagSleuth wipes them; enter them again after a restart.
 - **Encrypted while held:** the password stays encrypted in memory (Windows memory encryption, only this process can decrypt it) and is decrypted only for the moment it is handed to Windows to log on, then wiped.

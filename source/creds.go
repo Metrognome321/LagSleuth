@@ -80,6 +80,54 @@ func setCred(host, user string, password []uint16) error {
 	return nil
 }
 
+// copyCred gives host the same login as from. The password is decrypted only inside this process, for as long
+// as it takes to set it up for the new host, then wiped.
+func copyCred(from, host string) error {
+	if from == host {
+		return nil
+	}
+	credMu.RLock()
+	e := creds[from]
+	if e == nil {
+		credMu.RUnlock()
+		return errors.New("there is no saved login for " + from + " any more")
+	}
+	user := e.User
+	var pw []uint16
+	err := e.sec.withPasswordUTF16(func(p []uint16) { pw = append(make([]uint16, 0, len(p)), p...) })
+	credMu.RUnlock()
+	defer zeroUTF16(pw)
+	if err != nil {
+		return err
+	}
+	return setCred(host, user, pw)
+}
+
+func credUser(host string) string {
+	credMu.RLock()
+	defer credMu.RUnlock()
+	if e := creds[host]; e != nil {
+		return e.User
+	}
+	return ""
+}
+
+const maxCredHosts = 64
+
+// credHostList merges "host" and "hosts" into a trimmed list without blanks or repeats.
+func credHostList(one string, many []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, h := range append([]string{one}, many...) {
+		h = strings.TrimSpace(h)
+		if h != "" && !seen[h] {
+			seen[h] = true
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
 func removeCred(host string) {
 	credMu.Lock()
 	if e := creds[host]; e != nil {
@@ -234,46 +282,96 @@ func credRoutes(mux *http.ServeMux) {
 		writeJSON(w, list)
 	})
 
-	// POST /api/credentials {"host": "...", "user": "DOMAIN\\name", "password": "..."} -> store in memory, then test
+	// POST /api/credentials -> store in memory for one or more servers, then test each:
+	//   {"hosts": ["a", "b"], "user": "DOMAIN\\name", "password": "..."}   a new login ("host": "a" also works)
+	//   {"hosts": ["a", "b"], "from": "c"}                                   reuse the login saved for server c
+	// Reusing copies the login inside LagSleuth: the password is never sent back to the browser.
 	mux.HandleFunc("POST /api/credentials", func(w http.ResponseWriter, r *http.Request) {
 		if !localOnly(w, r) {
 			return
 		}
-		body, _ := io.ReadAll(io.LimitReader(r.Body, 16<<10))
+		body, _ := io.ReadAll(io.LimitReader(r.Body, 32<<10))
 		defer zeroBytes(body)
 		var req struct {
 			Host     string          `json:"host"`
+			Hosts    []string        `json:"hosts"`
+			From     string          `json:"from"`
 			User     string          `json:"user"`
 			Password json.RawMessage `json:"password"`
 		}
 		err := json.Unmarshal(body, &req)
 		defer zeroBytes(req.Password)
-		host, user := strings.TrimSpace(req.Host), strings.TrimSpace(req.User)
-		if err != nil || host == "" || user == "" || !hostRE.MatchString(host) || !logEligible(host) {
+		hosts := credHostList(req.Host, req.Hosts)
+		if err != nil || len(hosts) == 0 {
 			w.WriteHeader(400)
-			writeJSON(w, map[string]string{"error": "Enter a server, a user name and a password."})
+			writeJSON(w, map[string]string{"error": "Pick at least one server."})
 			return
 		}
-		pw, err := jsonStringUTF16(req.Password)
-		defer zeroUTF16(pw)
-		if err != nil || len(pw) == 0 {
+		if len(hosts) > maxCredHosts {
 			w.WriteHeader(400)
-			writeJSON(w, map[string]string{"error": "Enter a password."})
+			writeJSON(w, map[string]string{"error": "Pick at most " + strconv.Itoa(maxCredHosts) + " servers at a time."})
 			return
 		}
-		if err := setCred(host, user, pw); err != nil {
-			w.WriteHeader(500)
-			writeJSON(w, map[string]string{"error": err.Error()})
-			return
-		}
-		// quick test: can we read the System log there with these credentials?
-		res := map[string]any{"ok": true, "host": host, "user": user}
-		if err := testEventLogAccess(host); err != nil {
-			res["event_logs"] = "failed: " + err.Error()
+		from, user := strings.TrimSpace(req.From), strings.TrimSpace(req.User)
+		var apply func(host string) error
+		if from != "" {
+			if !hasCred(from) {
+				w.WriteHeader(400)
+				writeJSON(w, map[string]string{"error": "There is no saved login for " + from + " any more."})
+				return
+			}
+			apply = func(host string) error { return copyCred(from, host) }
+			user = credUser(from)
 		} else {
-			res["event_logs"] = "ok"
+			if user == "" {
+				w.WriteHeader(400)
+				writeJSON(w, map[string]string{"error": "Enter a user name and a password."})
+				return
+			}
+			pw, err := jsonStringUTF16(req.Password)
+			defer zeroUTF16(pw)
+			if err != nil || len(pw) == 0 {
+				w.WriteHeader(400)
+				writeJSON(w, map[string]string{"error": "Enter a password."})
+				return
+			}
+			apply = func(host string) error { return setCred(host, user, pw) }
 		}
-		writeJSON(w, res)
+		// store for each server (one at a time), then test them all at once: can we read the System log there?
+		results := make([]map[string]any, len(hosts))
+		var wg sync.WaitGroup
+		for i, host := range hosts {
+			res := map[string]any{"host": host}
+			results[i] = res
+			if !hostRE.MatchString(host) || !logEligible(host) {
+				res["error"] = "not a server LagSleuth can read"
+				continue
+			}
+			if err := apply(host); err != nil {
+				res["error"] = err.Error()
+				continue
+			}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if err := testEventLogAccess(host); err != nil {
+					res["event_logs"] = "failed: " + err.Error()
+				} else {
+					res["event_logs"] = "ok"
+				}
+			}()
+		}
+		wg.Wait()
+		out := map[string]any{"ok": true, "user": user, "results": results}
+		if len(results) == 1 { // the single-server answer, as before
+			for k, v := range results[0] {
+				out[k] = v
+			}
+			if _, bad := results[0]["error"]; bad {
+				w.WriteHeader(400)
+			}
+		}
+		writeJSON(w, out)
 	})
 
 	// DELETE /api/credentials/{host} -> wipe them

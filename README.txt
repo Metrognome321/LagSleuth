@@ -133,9 +133,9 @@ REPORT AND PDF
   paused, exactly the period shown on the graph). Pick a period or a custom
   From / To range at the top, and use the Targets list to report on one host
   or a few (hosts unticked on the dashboard are left out already). It
-  contains: summary, ping graph for the
-  period, server metric graphs, incidents with per-host disk / CPU figures and
-  event log counts, then one section per host. "Export PDF" opens the print
+  contains: summary, ping graph for the period, server metric graphs,
+  incidents with per-host disk / CPU figures and event log counts, then one
+  section per host. "Export PDF" opens the print
   dialog: choose "Save as PDF" or "Microsoft Print to PDF" (A4 landscape).
 
 EVENT LOGS AROUND INCIDENTS

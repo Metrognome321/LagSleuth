@@ -2,6 +2,8 @@ package main
 
 import (
 	"math"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -187,5 +189,32 @@ func TestProcStoreAndSummary(t *testing.T) {
 	tp := topProcesses(map[string]float64{"_Total": 400, "Idle": 300, "a": 80, "b": 20}, map[string]float64{"a": 1048576 * 10})
 	if len(tp) != 2 || tp[0].Name != "a" || tp[0].CPU != 20 || tp[0].MemMB != 10 || tp[1].CPU != 5 {
 		t.Fatalf("topProcesses wrong: %+v", tp)
+	}
+}
+
+func TestReqTargetsAndIncidentsFor(t *testing.T) {
+	cfgMu.Lock()
+	old := cfg.Targets
+	cfg.Targets = []string{"10.20.30.1", "10.20.30.11", "10.20.30.12"}
+	cfgMu.Unlock()
+	defer func() { cfgMu.Lock(); cfg.Targets = old; cfgMu.Unlock() }()
+
+	r := httptest.NewRequest("GET", "/api/report", nil)
+	if ts, picked := reqTargets(r); picked || len(ts) != 3 {
+		t.Fatalf("no ?target= should mean all targets, got %v %v", ts, picked)
+	}
+	r = httptest.NewRequest("GET", "/api/report?target="+url.QueryEscape(" 10.20.30.11, 10.20.30.12,,10.20.30.11"), nil)
+	ts, picked := reqTargets(r)
+	if !picked || len(ts) != 2 || ts[0] != "10.20.30.11" || ts[1] != "10.20.30.12" {
+		t.Fatalf("comma list parsed wrong: %v %v", ts, picked)
+	}
+
+	incs := []Incident{
+		{Hosts: []IncidentHost{{Target: "10.20.30.1"}, {Target: "10.20.30.11"}}},
+		{Hosts: []IncidentHost{{Target: "10.20.30.1"}}},
+		{Hosts: []IncidentHost{{Target: "10.20.30.12"}}},
+	}
+	if got := incidentsFor(incs, []string{"10.20.30.11", "10.20.30.12"}); len(got) != 2 {
+		t.Fatalf("incidentsFor kept %d, want 2", len(got))
 	}
 }

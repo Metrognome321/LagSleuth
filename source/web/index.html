@@ -853,9 +853,12 @@ const rangeLabel = () => document.querySelector('#range .on').textContent;
 // Report: when the graph is paused on a period, report exactly that period; otherwise the stats window (min. 24 h)
 const localISO = ts => { const d = new Date(ts * 1000 - d0off(ts)); return d.toISOString().slice(0, 19); };
 const d0off = ts => new Date(ts * 1000).getTimezoneOffset() * 60000;
+// and if some hosts are unticked on their cards, report only the ticked ones
 function reportHref() {
-  if (!view.live && view.data) return `/report?from=${localISO(view.data.start)}&to=${localISO(view.data.end)}`;
-  return `/report?minutes=${Math.max(state.minutes, 1440)}`;
+  const hosts = Object.keys(view.liveData || {}), shown = hosts.filter(h => !view.hidden.has(h));
+  const tq = shown.length && shown.length < hosts.length ? `&target=${encodeURIComponent(shown.join(','))}` : '';
+  if (!view.live && view.data) return `/report?from=${localISO(view.data.start)}&to=${localISO(view.data.end)}${tq}`;
+  return `/report?minutes=${Math.max(state.minutes, 1440)}${tq}`;
 }
 document.getElementById('reportBtn').addEventListener('mousedown', e => { e.currentTarget.href = reportHref(); });
 

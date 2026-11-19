@@ -546,6 +546,23 @@ func targetList() []string {
 	return append([]string(nil), cfg.Targets...)
 }
 
+// reqTargets returns the targets named by ?target= (one, or several separated by commas) and whether
+// the request asked for specific ones; with no ?target= it returns every configured target.
+func reqTargets(r *http.Request) ([]string, bool) {
+	var out []string
+	seen := map[string]bool{}
+	for _, t := range strings.Split(r.URL.Query().Get("target"), ",") {
+		if t = strings.TrimSpace(t); t != "" && !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	if len(out) == 0 {
+		return targetList(), false
+	}
+	return out, true
+}
+
 // ---------------------------------------------------------------------------- simulation (testing)
 
 var simMu sync.Mutex
@@ -1384,10 +1401,7 @@ func routes() *http.ServeMux {
 		if mode == "" {
 			mode = "ranges"
 		}
-		targets := targetList()
-		if t := r.URL.Query().Get("target"); t != "" {
-			targets = []string{t}
-		}
+		targets, picked := reqTargets(r)
 		sections := []map[string]any{}
 		for _, t := range targets {
 			h := buildHist(t, start, end)
@@ -1399,6 +1413,9 @@ func routes() *http.ServeMux {
 		c := cfg
 		cfgMu.Unlock()
 		incs := buildIncidents(start, end)
+		if picked {
+			incs = incidentsFor(incs, targets)
+		}
 		multi := []Incident{}
 		for _, inc := range incs {
 			if len(inc.Hosts) >= 2 && len(multi) < 300 {
@@ -1408,14 +1425,27 @@ func routes() *http.ServeMux {
 			}
 		}
 		writeJSON(w, map[string]any{"start": start, "end": end, "generated": float64(time.Now().Unix()),
-			"mode": mode, "cfg": c, "sections": sections, "version": version,
+			"mode": mode, "cfg": c, "sections": sections, "version": version, "picked": picked, "all_targets": targetList(),
 			"incidents": map[string]any{"multi_host": multi, "total": len(incs), "finding": incidentPattern(incs, start, end)},
 			"health":    healthAPI(start, end)})
 	})
 
 	mux.HandleFunc("GET /api/export/events.csv", func(w http.ResponseWriter, r *http.Request) {
 		start, end := window(r)
-		evs := eventsIn(r.URL.Query().Get("target"), start, end, 1<<30)
+		evs := eventsIn("", start, end, 1<<30)
+		if targets, picked := reqTargets(r); picked {
+			keep := map[string]bool{}
+			for _, t := range targets {
+				keep[t] = true
+			}
+			kept := evs[:0]
+			for _, e := range evs {
+				if keep[e.Target] {
+					kept = append(kept, e)
+				}
+			}
+			evs = kept
+		}
 		w.Header().Set("Content-Type", "text/csv")
 		w.Header().Set("Content-Disposition", "attachment; filename=lagsleuth_deviations.csv")
 		cw := csv.NewWriter(w)
@@ -1434,10 +1464,7 @@ func routes() *http.ServeMux {
 
 	mux.HandleFunc("GET /api/export/samples.csv", func(w http.ResponseWriter, r *http.Request) {
 		start, end := window(r)
-		targets := targetList()
-		if t := r.URL.Query().Get("target"); t != "" {
-			targets = []string{t}
-		}
+		targets, _ := reqTargets(r)
 		w.Header().Set("Content-Type", "text/csv")
 		w.Header().Set("Content-Disposition", "attachment; filename=lagsleuth_samples.csv")
 		cw := csv.NewWriter(w)

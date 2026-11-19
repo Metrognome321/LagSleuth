@@ -69,7 +69,7 @@ One exe. No install, no admin rights, no Python, no database, no internet connec
 - **Event logs around incidents**: after an incident, LagSleuth reads the Windows event logs from the monitoring PC and every affected host, from 2 minutes before to 1 minute after. It collects errors and warnings plus events that often explain a stall: clock changes, VSS / snapshots / VMware Tools, scheduled tasks, Windows Update, Storport and Time-Service.
 
 ### Reporting
-- **Printable report** for any period (preset or custom From / To): summary, ping graph, server metric graphs, incidents with per-host metrics and event-log counts, and a section per host.
+- **Printable report** for any period (preset or custom From / To), for every host or just the ones you pick: summary, ping graph, server metric graphs, incidents with per-host metrics and event-log counts, and a section per host.
 - **Export PDF** (A4 landscape, high-resolution graphs) through the browser's *Save as PDF*.
 - **CSV exports**: incidents, deviation events and every raw ping.
 

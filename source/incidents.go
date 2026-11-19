@@ -312,6 +312,24 @@ type incidentFinding struct {
 }
 
 // incidentPattern looks for incidents that hit 2+ hosts at the same minute of the hour, hour after hour.
+// incidentsFor keeps the incidents that hit at least one of the given targets.
+func incidentsFor(incs []Incident, targets []string) []Incident {
+	keep := map[string]bool{}
+	for _, t := range targets {
+		keep[t] = true
+	}
+	out := []Incident{}
+	for _, inc := range incs {
+		for _, h := range inc.Hosts {
+			if keep[h.Target] {
+				out = append(out, inc)
+				break
+			}
+		}
+	}
+	return out
+}
+
 func incidentPattern(incs []Incident, start, end float64) incidentFinding {
 	obs := len(observedHours(start, end))
 	f := incidentFinding{HoursObserved: obs}
@@ -421,6 +439,9 @@ func incidentRoutes(mux *http.ServeMux) {
 		start, end := window(r)
 		minHosts, _ := strconv.Atoi(r.URL.Query().Get("min_hosts"))
 		incs := buildIncidents(start, end)
+		if targets, picked := reqTargets(r); picked {
+			incs = incidentsFor(incs, targets)
+		}
 		w.Header().Set("Content-Type", "text/csv")
 		w.Header().Set("Content-Disposition", "attachment; filename=lagsleuth_incidents.csv")
 		cw := csv.NewWriter(w)

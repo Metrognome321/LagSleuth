@@ -12,6 +12,16 @@
   .toolbar a, .toolbar button, .toolbar select, .toolbar input { font: inherit; padding: 5px 10px; border: 1px solid #c3c2b7; border-radius: 6px; background: #fcfcfb; color: #0b0b0b; text-decoration: none; cursor: pointer; }
   .toolbar .primary { background: #2a78d6; border-color: #2a78d6; color: #fff; font-weight: 600; }
   .toolbar .sep { width: 1px; height: 22px; background: #c3c2b7; }
+  .tsel { position: relative; }
+  .tsel summary { list-style: none; padding: 5px 10px; border: 1px solid #c3c2b7; border-radius: 6px; background: #fcfcfb; cursor: pointer; user-select: none; }
+  .tsel summary::-webkit-details-marker { display: none; }
+  .tsel summary::after { content: ' ▾'; color: #52514e; }
+  .tpanel { position: absolute; z-index: 10; top: calc(100% + 4px); left: 0; min-width: 230px; background: #fcfcfb; border: 1px solid #c3c2b7; border-radius: 8px; padding: 8px 10px; box-shadow: 0 6px 18px rgba(0,0,0,.12); }
+  .tpanel .tlist { max-height: 300px; overflow: auto; margin-bottom: 8px; }
+  .tpanel label { display: block; padding: 3px 2px; white-space: nowrap; font-family: ui-monospace, Consolas, monospace; cursor: pointer; }
+  .tpanel label.gone { color: #898781; }
+  .toolbar .tpanel input { padding: 0; margin: 0 7px 0 0; vertical-align: -2px; }
+  .tpanel .tbtns { display: flex; gap: 6px; }
   section { background: #fcfcfb; border: 1px solid #e1e0d9; border-radius: 10px; padding: 16px 20px; margin-bottom: 18px; page-break-inside: avoid; break-inside: avoid; }
   section.flow { page-break-inside: auto; break-inside: auto; }
   h2 { font-size: 16px; margin: 0 0 12px; }
@@ -57,6 +67,11 @@
   </select>
   <input type="datetime-local" id="from" step="1" title="From"> <span class="small">to</span> <input type="datetime-local" id="to" step="1" title="To">
   <button id="apply">Apply</button>
+  <span class="sep"></span>
+  <details class="tsel" id="tsel"><summary id="tselLabel" title="Choose which targets the report covers">All targets</summary>
+    <div class="tpanel"><div class="tlist" id="tlist"></div>
+      <div class="tbtns"><button type="button" id="tall">All</button><button type="button" id="tnone">None</button><button type="button" class="primary" id="tapply">Apply</button></div></div>
+  </details>
   <span class="sep"></span>
   <select id="mode"><option value="ranges">Ranges</option><option value="exact">Exact ms</option></select>
   <a id="csv">Deviations CSV</a>
@@ -108,6 +123,27 @@ document.getElementById('csv').href = '/api/export/events.csv?' + params;
 document.getElementById('raw').href = '/api/export/samples.csv?' + params;
 document.getElementById('icsv').href = '/api/export/incidents.csv?min_hosts=2&' + params;
 document.getElementById('pdf').onclick = () => window.print();
+
+// target picker: ?target=a,b limits the report to those targets (no ?target = all of them)
+const tsel = document.getElementById('tsel'), tlist = document.getElementById('tlist');
+function fillTargets(all, picked, chosen) {
+  const names = [...all, ...chosen.filter(t => !all.includes(t))];   // keep picked targets that were removed since
+  tlist.innerHTML = names.map(t => `<label class="${all.includes(t) ? '' : 'gone'}"${all.includes(t) ? '' : ' title="No longer monitored"'}><input type="checkbox" value="${esc(t)}"${!picked || chosen.includes(t) ? ' checked' : ''}>${esc(t)}</label>`).join('');
+  document.getElementById('tselLabel').textContent = !picked ? `All targets (${all.length})`
+    : chosen.length === 1 ? `Target: ${chosen[0]}` : `${chosen.length} of ${names.length} targets`;
+}
+const boxes = () => [...tlist.querySelectorAll('input')];
+document.getElementById('tall').onclick = () => boxes().forEach(b => b.checked = true);
+document.getElementById('tnone').onclick = () => boxes().forEach(b => b.checked = false);
+document.getElementById('tapply').onclick = () => {
+  const on = boxes().filter(b => b.checked).map(b => b.value);
+  if (!on.length) return alert('Tick at least one target.');
+  // every monitored target ticked (and no removed ones) is the same as "all"
+  const isAll = boxes().every(b => b.checked !== b.parentElement.classList.contains('gone'));
+  if (isAll) params.delete('target'); else params.set('target', on.join(','));
+  location.search = params.toString();
+};
+document.addEventListener('click', e => { if (tsel.open && !tsel.contains(e.target)) tsel.open = false; });
 window.addEventListener('beforeprint', () => charts.forEach(c => c.resize()));
 window.addEventListener('afterprint', () => charts.forEach(c => c.resize()));
 
@@ -156,6 +192,9 @@ fetch('/api/report?' + params).then(r => r.json()).then(async R => {
   document.title = `LagSleuth report ${localISO(R.start).replace('T', ' ')} to ${localISO(R.end).replace('T', ' ')}`;
   const root = document.getElementById('sections');
   const targets = R.sections.map(s => s.summary.target);
+  fillTargets(R.all_targets || [], R.picked, targets);
+  if (R.picked) document.getElementById('meta').insertAdjacentHTML('beforeend',
+    `<br>Targets: <b>${targets.map(esc).join(', ')}</b> (${targets.length} of ${(R.all_targets || []).length} monitored)`);
   const colorOf = t => CAT[targets.indexOf(t) % CAT.length] || '#898781';
 
   // overview: monitor health + incident finding
@@ -166,7 +205,7 @@ fetch('/api/report?' + params).then(r => r.json()).then(async R => {
     <div class="verdict" style="border-color:${H.stall_count ? '#fab219' : '#0ca30c'}">${H.stall_count
       ? `⚠ LagSleuth itself was paused ${H.stall_count} time(s) in this period (worst ${ms(H.worst_ms)} ms). Pings at those moments may be slow because of the monitoring machine.`
       : '✔ The monitoring machine kept to time for the whole period, so the slow pings below are not caused by LagSleuth.'}</div>
-    <div class="small">${I.multi_host.length} incident(s) affected more than one host at the same time · ${I.total} incident(s) in total · ${targets.length} target(s)</div></section>`);
+    <div class="small">${I.multi_host.length} incident(s) affected more than one host at the same time · ${I.total} incident(s) in total${R.picked ? ' involving the chosen targets' : ''} · ${targets.length} target(s)</div></section>`);
 
   // ping graph over the period (worst ping per time slice, all targets)
   const maxPts = 700;
@@ -181,7 +220,7 @@ fetch('/api/report?' + params).then(r => r.json()).then(async R => {
   try {
     const keys = [...new Set(MREP.flatMap(m => m.keys))];
     const M = await fetch(`/api/metrics?from=${R.start}&to=${R.end}&max=${maxPts}&metrics=${keys.join(',')}`).then(r => r.json());
-    const hosts = Object.keys(M.hosts).sort((a, b) => a === 'local' ? -1 : b === 'local' ? 1 : a.localeCompare(b));
+    const hosts = Object.keys(M.hosts).filter(h => h === 'local' || !R.picked || targets.includes(h)).sort((a, b) => a === 'local' ? -1 : b === 'local' ? 1 : a.localeCompare(b));
     if (hosts.length) {
       const mcolor = h => h === 'local' ? LOCAL : colorOf(h);
       const mlabel = h => h === 'local' ? (M.hosts[h].label || 'This PC') : h;

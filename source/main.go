@@ -47,6 +47,8 @@ type Config struct {
 	RangeBucketsMs         []int    `json:"range_buckets_ms"`
 	IncidentWindowS        float64  `json:"incident_window_s"`
 	EventLogs              bool     `json:"event_logs"`
+	EventLogBeforeS        float64  `json:"event_log_before_s"` // event log read from this long before an incident…
+	EventLogAfterS         float64  `json:"event_log_after_s"`  // …to this long after it ends
 	Metrics                bool     `json:"metrics"`
 	MetricsIntervalSeconds float64  `json:"metrics_interval_seconds"`
 	MetricsRetentionDays   int      `json:"metrics_retention_days"`
@@ -62,7 +64,7 @@ func defaultConfig() Config {
 		BaselineWindow: 300, BaselineMinSamples: 20, DeviationFactor: 3, DeviationMinDeltaMs: 10,
 		HighMs: 0, EventCloseAfter: 5, RetentionDays: 30,
 		RangeBucketsMs:  []int{1, 2, 5, 10, 20, 50, 100, 250, 500},
-		IncidentWindowS: 10, EventLogs: true,
+		IncidentWindowS: 10, EventLogs: true, EventLogBeforeS: 180, EventLogAfterS: 180,
 		Metrics: true, MetricsIntervalSeconds: 1, MetricsRetentionDays: 7, ProcessIntervalSeconds: 5,
 		Host: "0.0.0.0", Port: 5055, OpenBrowser: true,
 	}

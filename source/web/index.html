@@ -1249,10 +1249,11 @@ function logDetail(i) {
   const L = inc.logs[i.key];
   if (!L) return '<span class="tag">Loading event logs…</span>';
   if (L.error) return `<span class="tag">${esc(L.error)}</span>`;
-  let html = `<div class="ltools">Events from ${dstr(L.from)} to ${tstr(L.to)} (2 min before to 1 min after the incident) · collected ${dstr(L.collected)} · faded rows are outside the incident
+  const span = s => s >= 60 ? `${+(s / 60).toFixed(1)} min` : `${Math.round(s)} s`;
+  let html = `<div class="ltools">Events from ${dstr(L.from)} to ${tstr(L.to)} (${span(i.start_ts - L.from)} before to ${span(L.to - i.end_ts)} after the incident) · collected ${dstr(L.collected)} · faded rows are outside the incident
     <span style="flex:1"></span><button class="logbtn" data-collect="${i.key}" data-retry="1">↻ Collect again</button></div>`;
   for (const h of L.hosts) {
-    const st = h.status === 'ok' ? `<span class="st">${h.events.length} event${h.events.length === 1 ? '' : 's'}${h.capped ? ' (first 300)' : ''}</span>`
+    const st = h.status === 'ok' ? `<span class="st">${h.events.length} event${h.events.length === 1 ? '' : 's'}${h.capped ? ' (first 1000)' : ''}</span>`
       : `<span class="st bad">${h.status === 'skipped' ? 'skipped' : h.status === 'no_access' ? 'no access' : 'error'}: ${esc(h.error || '')}</span>`;
     const skipped = h.skipped && h.skipped.length ? `<span class="st" title="${esc(h.skipped.join('\n'))}">· ${h.skipped.length} log${h.skipped.length === 1 ? '' : 's'} not readable</span>` : '';
     const comp = h.events.length && h.events[0].computer ? ` <span class="st">(${esc(h.events[0].computer)})</span>` : '';

@@ -139,14 +139,19 @@ REPORT AND PDF
   dialog: choose "Save as PDF" or "Microsoft Print to PDF" (A4 landscape).
 
 EVENT LOGS AROUND INCIDENTS
-  30 seconds after an incident ends, LagSleuth reads the Windows event logs
-  from this PC and from every affected host, from 2 minutes before the
-  incident to 1 minute after. Click "Event logs" on the incident row to see
-  them, grouped by host, with the time relative to the incident start.
+  After an incident, LagSleuth reads the Windows event logs from this PC and
+  from every affected host, from 3 minutes before the incident started to 3
+  minutes after it ended, and collects them once that time has passed. Change
+  the window with "event_log_before_s" and "event_log_after_s" in config.json
+  (seconds). Click "Event logs" on the incident row to see them, grouped by
+  host, with the time relative to the incident start.
   - Collected: Critical, Error and Warning events from System and Application,
     plus events that often explain a stall: clock changes, shadow copies /
     backups (VSS, volsnap, VMware Tools), scheduled tasks starting, Windows
     Update, Storport and Time-Service.
+  - If Sysmon is installed, every program that started in that window, with
+    the program that launched it and its command line. This names short
+    scripts and scans that finish before a process sample can see them.
   - Short single-host blips are not collected automatically; use "Collect".
   - Public addresses (e.g. 8.8.8.8) are skipped.
   - Reading a remote server's logs uses the Windows account LagSleuth runs as.

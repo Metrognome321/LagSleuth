@@ -66,7 +66,7 @@ One exe. No install, no admin rights, no Python, no database, no internet connec
 - **Top processes**: the busiest applications on each server (CPU as a share of the machine, like Task Manager, plus memory), recorded every 5 seconds. You get a live "top:" line on each card, a CPU-per-process graph with a ranking table, and the busiest process during every incident.
 - **Per-incident metrics**: each incident shows every affected host's worst disk latency, CPU and stolen time.
 - **Show only some servers**: untick hosts on their cards (Ctrl+click = only that one) to filter the ping graph and every metric graph. Every graph has a clickable legend.
-- **Event logs around incidents**: after an incident, LagSleuth reads the Windows event logs from the monitoring PC and every affected host, from 2 minutes before to 1 minute after. It collects errors and warnings plus events that often explain a stall: clock changes, VSS / snapshots / VMware Tools, scheduled tasks, Windows Update, Storport and Time-Service.
+- **Event logs around incidents**: after an incident, LagSleuth reads the Windows event logs from the monitoring PC and every affected host, from 3 minutes before it started to 3 minutes after it ended (both adjustable). It collects errors and warnings plus events that often explain a stall: clock changes, VSS / snapshots / VMware Tools, scheduled tasks, Windows Update, Storport and Time-Service, and, where Sysmon is installed, every program that started, with what launched it.
 
 ### Reporting
 - **Printable report** for any period (preset or custom From / To), for every host or just the ones you pick: summary, ping graph, server metric graphs, incidents with per-host metrics and event-log counts, and a section per host.
@@ -127,6 +127,8 @@ Settings live in `config.json` next to the exe (or in `%LOCALAPPDATA%\LagSleuth`
 | `event_close_after` | `5` | Normal pings in a row that end an event |
 | `incident_window_s` | `10` | Slow spells starting this close together form one incident |
 | `event_logs` | `true` | Collect Windows event logs around incidents |
+| `event_log_before_s` | `180` | Event logs are read from this many seconds before an incident starts… |
+| `event_log_after_s` | `180` | …to this many seconds after it ends (they are collected once that has passed) |
 | `metrics` | `true` | Read CPU / memory / disk counters from the hosts |
 | `metrics_interval_seconds` | `1` | How often to read them (also changeable on the dashboard) |
 | `metrics_retention_days` | `7` | Metric and process history kept (about 4.5 MB + 3 MB per host per day) |

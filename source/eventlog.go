@@ -11,6 +11,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"net"
 	"net/http"
@@ -24,10 +25,9 @@ import (
 )
 
 const (
-	logBefore       = 120.0 // seconds of log collected before an incident starts
-	logAfter        = 60.0  // ... and after it ends
-	logSettle       = 30.0  // wait this long after an incident ends before collecting
-	logMaxPerHost   = 300
+	logSettle       = 15.0 // after the "after" window has passed, wait this long more before collecting
+	logMaxPerHost   = 1000 // events kept per host per incident
+	logMaxPerLog    = 500  // events read from one log on one host
 	logHostBackoff  = 30 * time.Minute
 	localHostLabel  = "This PC"
 	logParallelHost = 4
@@ -44,7 +44,9 @@ type LogChannel struct {
 var logChannels = []LogChannel{
 	{"System", "(Level=1 or Level=2 or Level=3 or (Provider[@Name='Microsoft-Windows-Kernel-General'] and (EventID=1)) or Provider[@Name='volsnap'])"},
 	{"Application", "(Level=1 or Level=2 or Level=3 or Provider[@Name='VSS'] or Provider[@Name='vmtools'] or Provider[@Name='VMTools'])"},
-	{"Microsoft-Windows-TaskScheduler/Operational", "(EventID=100 or EventID=200 or Level=1 or Level=2 or Level=3)"},
+	{"Microsoft-Windows-TaskScheduler/Operational", "(EventID=100 or EventID=129 or EventID=200 or EventID=201 or Level=1 or Level=2 or Level=3)"},
+	// Sysmon (if installed): every program that starts, however briefly, with what launched it
+	{"Microsoft-Windows-Sysmon/Operational", "(EventID=1)"},
 	{"Microsoft-Windows-Storage-Storport/Operational", "(Level=1 or Level=2 or Level=3)"},
 	{"Microsoft-Windows-Time-Service/Operational", "(Level=1 or Level=2 or Level=3)"},
 	{"Microsoft-Windows-WindowsUpdateClient/Operational", "(Level=1 or Level=2 or Level=3 or EventID=19 or EventID=43)"},
@@ -151,9 +153,24 @@ func eventLogsEnabled() bool {
 	return cfg.EventLogs
 }
 
+// logWindow: seconds of log read before an incident starts and after it ends (event_log_before_s / _after_s).
+func logWindow() (before, after float64) {
+	cfgMu.Lock()
+	defer cfgMu.Unlock()
+	before, after = cfg.EventLogBeforeS, cfg.EventLogAfterS
+	if before <= 0 {
+		before = 180
+	}
+	if after <= 0 {
+		after = 180
+	}
+	return math.Min(before, 3600), math.Min(after, 3600)
+}
+
 // collectFor reads the logs for one incident from this PC and every affected host, in parallel.
 func collectFor(inc Incident) *IncidentLogs {
-	from, to := inc.StartTS-logBefore, inc.EndTS+logAfter
+	before, after := logWindow()
+	from, to := inc.StartTS-before, inc.EndTS+after
 	type job struct{ host, label string }
 	jobs := []job{{"", localHostLabel}}
 	for _, h := range inc.Hosts {
@@ -193,7 +210,7 @@ func collectHost(host, label string, from, to float64) HostLogs {
 	}
 	hl.Status = "ok"
 	for i, ch := range logChannels {
-		evs, err := queryEvents(host, ch, from, to, logMaxPerHost)
+		evs, err := queryEvents(host, ch, from, to, logMaxPerLog)
 		if err != nil {
 			if err == errChannelMissing {
 				continue
@@ -233,15 +250,16 @@ func isAccessError(err error) bool {
 	return false
 }
 
-// logCollector runs in the background: once an incident has been over for logSettle seconds, collect its logs.
+// logCollector runs in the background: once an incident's "after" window has fully passed, collect its logs.
 func logCollector() {
 	for range time.Tick(15 * time.Second) {
 		if !eventLogsEnabled() {
 			continue
 		}
+		_, after := logWindow()
 		now := float64(time.Now().Unix())
-		for _, inc := range buildIncidents(now-3*3600, now) {
-			if inc.Ongoing || now-inc.EndTS < logSettle || !worthLogging(inc) {
+		for _, inc := range buildIncidents(now-3*3600-after, now) {
+			if inc.Ongoing || now-inc.EndTS < after+logSettle || !worthLogging(inc) {
 				continue
 			}
 			k := incidentKey(inc)
@@ -383,7 +401,10 @@ func parseEvents(out []byte) ([]LogEvent, error) {
 				Computer string `xml:"Computer"`
 			} `xml:"System"`
 			EventData struct {
-				Data []string `xml:"Data"`
+				Data []struct {
+					Name  string `xml:"Name,attr"`
+					Value string `xml:",chardata"`
+				} `xml:"Data"`
 			} `xml:"EventData"`
 			Rendering struct {
 				Message string `xml:"Message"`
@@ -400,9 +421,18 @@ func parseEvents(out []byte) ([]LogEvent, error) {
 		if err != nil {
 			continue
 		}
+		data := map[string]string{}
+		vals := make([]string, 0, len(e.EventData.Data))
+		for _, d := range e.EventData.Data {
+			data[d.Name] = strings.TrimSpace(d.Value)
+			vals = append(vals, strings.TrimSpace(d.Value))
+		}
 		msg := strings.TrimSpace(e.Rendering.Message)
+		if e.System.Provider.Name == "Microsoft-Windows-Sysmon" && e.System.EventID == 1 && data["Image"] != "" {
+			msg = sysmonProcessMsg(data) // the full Sysmon text is ~25 lines; keep what identifies the program
+		}
 		if msg == "" {
-			msg = strings.Join(e.EventData.Data, " · ")
+			msg = strings.Join(vals, " · ")
 		}
 		if len(msg) > 2000 {
 			msg = msg[:2000] + "…"
@@ -413,18 +443,40 @@ func parseEvents(out []byte) ([]LogEvent, error) {
 	return evs, nil
 }
 
+// sysmonProcessMsg condenses a Sysmon "Process Create" event to: program started · launched by · command line · user.
+func sysmonProcessMsg(d map[string]string) string {
+	parts := []string{"Process started: " + d["Image"]}
+	if d["ParentImage"] != "" {
+		parts = append(parts, "launched by "+d["ParentImage"])
+	}
+	if c := d["CommandLine"]; c != "" && !strings.EqualFold(strings.Trim(c, `" `), d["Image"]) {
+		parts = append(parts, "command: "+c)
+	}
+	if d["User"] != "" {
+		parts = append(parts, "user "+d["User"])
+	}
+	return strings.Join(parts, " · ")
+}
+
 // simEvents produces plausible events in simulation mode so the dashboard can be tried without Windows logs.
 func simEvents(host string, ch LogChannel, from, to float64) []LogEvent {
-	if ch.Name != "System" && ch.Name != "Application" {
-		return nil
-	}
 	if host == "10.0.0.6" {
 		return nil
 	}
-	mid := from + logBefore
+	before, _ := logWindow()
+	mid := from + before
 	pc := host
 	if pc == "" {
 		pc = "LAGSLEUTH-PC"
+	}
+	if ch.Name == "Microsoft-Windows-Sysmon/Operational" {
+		return []LogEvent{{TS: mid - 0.3, Channel: ch.Name, Provider: "Microsoft-Windows-Sysmon", ID: 1, Level: 4, Computer: pc,
+			Message: sysmonProcessMsg(map[string]string{"Image": `C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`,
+				"ParentImage": `C:\Windows\System32\svchost.exe`, "CommandLine": `powershell.exe -NoProfile -File C:\Scripts\hourly-inventory.ps1`,
+				"User": `NT AUTHORITY\SYSTEM`})}}
+	}
+	if ch.Name != "System" && ch.Name != "Application" {
+		return nil
 	}
 	if ch.Name == "Application" {
 		return []LogEvent{

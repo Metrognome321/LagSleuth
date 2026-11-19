@@ -235,3 +235,25 @@ func TestFocusIncident(t *testing.T) {
 		t.Fatal("focusIncident changed the original")
 	}
 }
+
+func TestParseSysmonProcessCreate(t *testing.T) {
+	out := []byte(`<Events><Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System><Provider Name='Microsoft-Windows-Sysmon'/><EventID>1</EventID><Level>4</Level><TimeCreated SystemTime='2026-11-18T12:00:01Z'/><Channel>Microsoft-Windows-Sysmon/Operational</Channel><Computer>BED01</Computer></System>` +
+		`<EventData><Data Name='Image'>C:\Windows\System32\cmd.exe</Data><Data Name='CommandLine'>cmd.exe /c C:\Scripts\check.cmd</Data><Data Name='ParentImage'>C:\Windows\System32\svchost.exe</Data><Data Name='User'>NT AUTHORITY\SYSTEM</Data></EventData>` +
+		`<RenderingInfo Culture='en-GB'><Message>Process Create:&#13;&#10;RuleName: -&#13;&#10;UtcTime: ...</Message></RenderingInfo></Event></Events>`)
+	evs, err := parseEvents(out)
+	if err != nil || len(evs) != 1 {
+		t.Fatalf("parse: %v, %d events", err, len(evs))
+	}
+	want := `Process started: C:\Windows\System32\cmd.exe · launched by C:\Windows\System32\svchost.exe · command: cmd.exe /c C:\Scripts\check.cmd · user NT AUTHORITY\SYSTEM`
+	if evs[0].Message != want {
+		t.Errorf("sysmon message:\n got %q\nwant %q", evs[0].Message, want)
+	}
+	cfgMu.Lock()
+	old := cfg
+	cfg.EventLogBeforeS, cfg.EventLogAfterS = 0, 90
+	cfgMu.Unlock()
+	defer func() { cfgMu.Lock(); cfg = old; cfgMu.Unlock() }()
+	if b, a := logWindow(); b != 180 || a != 90 {
+		t.Errorf("logWindow = %v, %v; want 180 (default), 90", b, a)
+	}
+}

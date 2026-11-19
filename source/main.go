@@ -29,7 +29,7 @@ import (
 //go:embed web
 var webFS embed.FS
 
-var version = "1.6.1"
+var version = "1.6.2"
 
 // ---------------------------------------------------------------------------- config
 

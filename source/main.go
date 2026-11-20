@@ -1255,6 +1255,9 @@ func window(r *http.Request) (float64, float64) {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
+	// the page times its graphs by this clock, not the browser's, so a viewer whose clock
+	// is ahead or behind still sees the latest pings at the right-hand edge
+	w.Header().Set("X-LagSleuth-Time", strconv.FormatFloat(float64(time.Now().UnixMilli())/1000, 'f', 3, 64))
 	json.NewEncoder(w).Encode(v)
 }
 

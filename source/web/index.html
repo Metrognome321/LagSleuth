@@ -439,7 +439,7 @@ function visibleTargets() {
 async function loadGraph() {
   const targets = visibleTargets();
   if (!targets.length) return;
-  const now = Date.now() / 1000;
+  const now = serverNow();
   const end = view.live ? now : Math.min(view.end, now);
   const start = end - view.span;
   const id = ++view.reqId;
@@ -564,10 +564,10 @@ function syncSpanSelect() {
   else { custom.hidden = false; custom.textContent = (s => s >= 86400 ? `${+(s / 86400).toFixed(1)} days` : s >= 3600 ? `${+(s / 3600).toFixed(1)} hours` : s >= 60 ? `${Math.round(s / 60)} min` : `${Math.round(s)} s`)(view.span); sel.value = 'custom'; }
 }
 
-function freeze(end) { view.live = false; view.end = end ?? (view.data ? view.data.end : Date.now() / 1000); }
+function freeze(end) { view.live = false; view.end = end ?? (view.data ? view.data.end : serverNow()); }
 function goLive() { view.live = true; view.end = null; loadGraph(); }
 function setView(start, end) {
-  const now = Date.now() / 1000;
+  const now = serverNow();
   view.span = Math.min(Math.max(end - start, 30), 30 * 86400);
   freeze(Math.min(end, now));
   syncSpanSelect();
@@ -579,8 +579,8 @@ function jumpTo(start, end, target) {
   document.getElementById('graphPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 function step(dir) {
-  const base = view.live ? Date.now() / 1000 : view.end;
-  const end = Math.min(base + dir * view.span / 2, Date.now() / 1000);
+  const base = view.live ? serverNow() : view.end;
+  const end = Math.min(base + dir * view.span / 2, serverNow());
   freeze(end); loadGraph();
 }
 
@@ -595,7 +595,7 @@ document.getElementById('spanSel').onchange = e => {
   if (e.target.value === 'custom') return;
   const center = view.live ? null : view.end - view.span / 2;
   view.span = +e.target.value;
-  if (!view.live) view.end = Math.min(center + view.span / 2, Date.now() / 1000);
+  if (!view.live) view.end = Math.min(center + view.span / 2, serverNow());
   syncSpanSelect(); loadGraph();
 };
 document.getElementById('gotoBtn').onclick = () => {
@@ -626,7 +626,7 @@ document.addEventListener('keydown', e => {
     if (Math.abs(dx) < 3 && !drag.moved) return;
     drag.moved = true;
     const area = graph.chartArea;
-    const now = Date.now() / 1000;
+    const now = serverNow();
     const end = Math.min(drag.end - dx / (area.right - area.left) * view.span, now);
     freeze(end);
     graph.options.scales.x.min = end - view.span; graph.options.scales.x.max = end;
@@ -640,7 +640,7 @@ document.addEventListener('keydown', e => {
     const area = graph.chartArea;
     const x = graph.scales.x;
     const f = e.deltaY > 0 ? 1.3 : 1 / 1.3;
-    const now = Date.now() / 1000;
+    const now = serverNow();
     const start0 = x.min, end0 = x.max;
     const tc = Math.min(Math.max(x.getValueForPixel(e.offsetX), start0), end0);
     let span = Math.min(Math.max((end0 - start0) * f, 30), 30 * 86400);
@@ -833,7 +833,15 @@ document.getElementById('patMetric').addEventListener('click', e => {
 });
 
 /* ---------------- polling ---------------- */
-async function getJSON(u, opts) { const r = await fetch(u, opts); return r.json(); }
+// server clock minus browser clock (s): pings carry the server's time, so "now" on the graphs must too
+let clockSkew = 0;
+function serverNow() { return Date.now() / 1000 + clockSkew; }
+async function getJSON(u, opts) {
+  const t0 = Date.now(), r = await fetch(u, opts), t1 = Date.now();
+  const st = parseFloat(r.headers.get("X-LagSleuth-Time"));
+  if (st > 0 && t1 - t0 < 2000) clockSkew = st - (t0 + t1) / 2000;
+  return r.json();
+}
 
 async function pollLive() {
   try {

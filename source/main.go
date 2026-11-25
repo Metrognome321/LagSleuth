@@ -29,7 +29,7 @@ import (
 //go:embed web
 var webFS embed.FS
 
-var version = "1.6.9"
+var version = "1.6.10"
 
 // ---------------------------------------------------------------------------- config
 
@@ -872,6 +872,25 @@ type bucket struct {
 	TO  int      `json:"to"`
 }
 
+// from / to / max query parameters shared by the samples endpoints
+func samplesParams(r *http.Request) (start, end float64, maxPts int) {
+	q := r.URL.Query()
+	start, _ = strconv.ParseFloat(q.Get("from"), 64)
+	end, _ = strconv.ParseFloat(q.Get("to"), 64)
+	now := float64(time.Now().UnixNano()) / 1e9
+	if end <= 0 || end > now {
+		end = now
+	}
+	if start <= 0 || start >= end {
+		start = end - 120
+	}
+	maxPts, err := strconv.Atoi(q.Get("max"))
+	if err != nil || maxPts < 100 {
+		maxPts = 1500
+	}
+	return start, end, maxPts
+}
+
 func samplesAPI(target string, start, end float64, maxPts int) map[string]any {
 	span := end - start
 	size := 0.0
@@ -1379,21 +1398,20 @@ func routes() *http.ServeMux {
 	})
 
 	mux.HandleFunc("GET /api/samples", func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
-		start, _ := strconv.ParseFloat(q.Get("from"), 64)
-		end, _ := strconv.ParseFloat(q.Get("to"), 64)
-		now := float64(time.Now().UnixNano()) / 1e9
-		if end <= 0 || end > now {
-			end = now
+		start, end, maxPts := samplesParams(r)
+		writeJSON(w, samplesAPI(r.URL.Query().Get("target"), start, end, maxPts))
+	})
+	// several targets in one request (comma-separated), so a graph of 100+ hosts is one round trip
+	mux.HandleFunc("GET /api/samples-multi", func(w http.ResponseWriter, r *http.Request) {
+		start, end, maxPts := samplesParams(r)
+		ts := strings.Split(r.URL.Query().Get("targets"), ",")
+		out := make([]map[string]any, 0, len(ts))
+		for _, t := range ts {
+			if t = strings.TrimSpace(t); t != "" {
+				out = append(out, samplesAPI(t, start, end, maxPts))
+			}
 		}
-		if start <= 0 || start >= end {
-			start = end - 120
-		}
-		maxPts, err := strconv.Atoi(q.Get("max"))
-		if err != nil || maxPts < 100 {
-			maxPts = 1500
-		}
-		writeJSON(w, samplesAPI(q.Get("target"), start, end, maxPts))
+		writeJSON(w, out)
 	})
 
 	mux.HandleFunc("GET /api/pattern", func(w http.ResponseWriter, r *http.Request) {

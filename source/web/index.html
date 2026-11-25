@@ -451,10 +451,19 @@ async function loadGraph() {
   const start = end - view.span;
   const id = ++view.reqId;
   const maxPts = Math.max(300, Math.round(document.getElementById('graphBox').clientWidth));
-  // hidden hosts are not fetched (they only keep their legend entry), so 100+ targets stay light
-  const res = await Promise.all(targets.map(t => targets.length > 1 && view.hidden.has(t)
-    ? Promise.resolve({ target: t, points: [], total: 0, bucket_s: 0 })
-    : getJSON(`/api/samples?target=${encodeURIComponent(t)}&from=${start}&to=${end}&max=${maxPts}`)));
+  const range = `from=${start}&to=${end}&max=${maxPts}`;
+  let res;
+  view.loading = true;
+  try {
+    if (targets.length === 1) res = [await getJSON(`/api/samples?target=${encodeURIComponent(targets[0])}&${range}`)];
+    else {
+      // all shown hosts in one request; hidden hosts are not fetched (they only keep their legend entry)
+      const shown = targets.filter(t => !view.hidden.has(t));
+      const got = shown.length ? await getJSON(`/api/samples-multi?targets=${shown.map(encodeURIComponent).join(',')}&${range}`) : [];
+      const by = Object.fromEntries(got.map(r => [r.target, r]));
+      res = targets.map(t => by[t] || { target: t, points: [], total: 0, bucket_s: 0 });
+    }
+  } finally { if (id === view.reqId) view.loading = false; }
   if (id !== view.reqId) return;          // a newer request superseded this one
   view.data = { start, end, res };
   view.lastLoad = Date.now();
@@ -863,7 +872,9 @@ async function pollLive() {
     renderTargets(data);
     // with many hosts on the graph, refresh every 5 s instead of every second to keep the load down
     const many = state.liveScope === 'all' && Object.keys(data).filter(h => !view.hidden.has(h)).length > 20;
-    if (view.live && Date.now() - view.lastLoad >= (view.span <= 1800 && !many ? 900 : 5000)) loadGraph();
+    // never start a refresh while the previous load is still running: it would supersede it, and on a
+    // slow load (many hosts) every refresh would cancel the last, so the graph never drew
+    if (view.live && !view.loading && Date.now() - view.lastLoad >= (view.span <= 1800 && !many ? 900 : 5000)) loadGraph();
   } catch (e) { console.error(e); }
 }
 
